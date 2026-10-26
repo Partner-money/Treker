@@ -2,7 +2,7 @@ package de.treker.habits.domain
 
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
+import kotlin.math.roundToInt
 
 object Tracking {
     const val SIMPLE = "SIMPLE"
@@ -27,14 +27,20 @@ object Tracking {
 
     fun clampProgress(value: Double): Double = value.coerceAtLeast(0.0)
 
-    /** Activity intensity is based on the fraction of scheduled items completed: 0, 1–33%, 34–66%, 67–99%, 100%. */
+    /**
+     * Activity intensity uses the same whole-percent value the UI shows:
+     * 0, 1–33%, 34–66%, 67–99%, 100%. Rounding prevents 2 of 3 (66.7%) from
+     * being displayed as "67%" while still painted in the middle level.
+     */
+    fun completionPercent(planned: Int, done: Int): Int =
+        if (planned <= 0) 0 else (done.toDouble() * 100.0 / planned).roundToInt().coerceIn(0, 100)
+
     fun heatLevel(planned: Int, done: Int): Int {
         if (planned <= 0 || done <= 0) return 0
-        val ratio = done.toDouble() / planned
-        return when {
-            ratio >= 1.0 -> 4
-            ratio >= 0.67 -> 3
-            ratio >= 0.34 -> 2
+        return when (completionPercent(planned, done)) {
+            100 -> 4
+            in 67..99 -> 3
+            in 34..66 -> 2
             else -> 1
         }
     }
