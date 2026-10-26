@@ -13,8 +13,8 @@ class MainActivityTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test fun launchesAndShowsPrimaryNavigation() {
-        composeRule.onNodeWithText("Привычки").assertExists()
-        composeRule.onNodeWithText("Шаблоны").assertExists()
-        composeRule.onNodeWithText("Новая привычка").assertExists()
+        composeRule.onNodeWithText("Привычки", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Шаблоны", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Новая привычка", useUnmergedTree = true).assertExists()
     }
 }
