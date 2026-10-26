@@ -25,7 +25,9 @@ object BackupCodec {
                 .put("vibrationEnabled", settings.vibrationEnabled)
                 .put("timerLongAlert", settings.timerLongAlert)
                 .put("firstDayOfWeek", settings.firstDayOfWeek)
-                .put("timeFormat", settings.timeFormat))
+                .put("timeFormat", settings.timeFormat)
+                .put("dayStartHour", settings.dayStartHour)
+                .put("showPercentInStats", settings.showPercentInStats))
         root.put("habits", JSONArray().apply {
             habits.forEach { h -> put(JSONObject()
                 .put("id", h.id).put("title", h.title).put("description", h.description).put("category", h.category)
@@ -135,7 +137,9 @@ object BackupCodec {
                 vibrationEnabled = prefs.optBoolean("vibrationEnabled", true),
                 timerLongAlert = prefs.optBoolean("timerLongAlert", false),
                 firstDayOfWeek = firstDay,
-                timeFormat = timeFormat
+                timeFormat = timeFormat,
+                dayStartHour = prefs.optInt("dayStartHour", 0).coerceIn(0, 6),
+                showPercentInStats = prefs.optBoolean("showPercentInStats", true)
             )
         }
         return BackupData(habits, records, templates, settings, settingsObject?.keys()?.asSequence()?.toSet() ?: emptySet())

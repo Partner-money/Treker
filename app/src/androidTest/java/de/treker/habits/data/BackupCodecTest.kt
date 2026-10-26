@@ -38,7 +38,8 @@ class BackupCodecTest {
     private fun settings() = UserSettings(
         theme = "DARK", remindersEnabled = false, soundEnabled = false, accentColor = 0xFF00897B,
         soundChoice = "CUSTOM", customSoundUri = "content://media/external/audio/media/7",
-        vibrationEnabled = false, timerLongAlert = true, firstDayOfWeek = "SUNDAY", timeFormat = "12H"
+        vibrationEnabled = false, timerLongAlert = true, firstDayOfWeek = "SUNDAY", timeFormat = "12H",
+        dayStartHour = 4, showPercentInStats = false
     )
 
     @Test fun versionThreeRoundTripsHabitsSoundsAndBehaviorSettings() {
@@ -77,7 +78,15 @@ class BackupCodecTest {
         assertNull(importedSettings?.customSoundUri)
         assertEquals("MONDAY", importedSettings?.firstDayOfWeek)
         assertEquals("24H", importedSettings?.timeFormat)
+        assertEquals(0, importedSettings?.dayStartHour)
+        assertEquals(true, importedSettings?.showPercentInStats)
         assertNull(parsed.habits.single().soundChoice)
+    }
+
+    @Test fun outOfRangeDayStartHourIsClamped() {
+        val json = JSONObject(BackupCodec.export(listOf(habit()), emptyList(), emptyList(), settings()))
+            .put("settings", JSONObject().put("dayStartHour", 23))
+        assertEquals(6, BackupCodec.parse(json.toString()).settings?.dayStartHour)
     }
 
     @Test fun unsafeCustomSoundUriIsDropped() {

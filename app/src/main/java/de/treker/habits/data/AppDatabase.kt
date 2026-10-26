@@ -88,21 +88,22 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun habitDao(): HabitDao
 
     companion object {
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("CREATE TABLE IF NOT EXISTS `user_templates` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `category` TEXT NOT NULL, `icon` TEXT NOT NULL, `color` INTEGER NOT NULL, `trackingType` TEXT NOT NULL, `target` REAL NOT NULL, `unit` TEXT NOT NULL, `scheduleMask` INTEGER NOT NULL)")
             }
         }
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE `habits` ADD COLUMN `soundChoice` TEXT")
                 database.execSQL("ALTER TABLE `habits` ADD COLUMN `soundUri` TEXT")
             }
         }
+        internal val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
         @Volatile private var instance: AppDatabase? = null
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "treker.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                .addMigrations(*MIGRATIONS).build().also { instance = it }
         }
     }
 }

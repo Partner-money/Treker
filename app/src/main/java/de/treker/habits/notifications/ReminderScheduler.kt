@@ -72,7 +72,9 @@ class ReminderReceiver : BroadcastReceiver() {
                 val habit = AppDatabase.get(context).habitDao().habit(habitId) ?: return@launch
                 val settings = SettingsStore(context).settings.first()
                 if (settings.remindersEnabled && habit.reminderEnabled && !habit.paused && !habit.archived) {
-                    val record = AppDatabase.get(context).habitDao().record(habit.id, LocalDate.now().toString())
+                    // The record belongs to the habit day, which may still be yesterday's date in the early morning.
+                    val habitDate = de.treker.habits.domain.DayBoundary.logicalDate(java.time.LocalDateTime.now(), settings.dayStartHour)
+                    val record = AppDatabase.get(context).habitDao().record(habit.id, habitDate.toString())
                     if (record?.status != Tracking.DONE) notify(context, habit.title, habit, settings)
                 }
                 ReminderScheduler.sync(context, habit, settings.remindersEnabled)

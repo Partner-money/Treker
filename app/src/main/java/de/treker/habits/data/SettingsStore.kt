@@ -3,6 +3,7 @@ package de.treker.habits.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -20,7 +21,11 @@ data class UserSettings(
     val vibrationEnabled: Boolean = true,
     val timerLongAlert: Boolean = false,
     val firstDayOfWeek: String = "MONDAY",
-    val timeFormat: String = "24H"
+    val timeFormat: String = "24H",
+    /** Hour (0..6) when a new habit day begins; before it the previous date is still "today". */
+    val dayStartHour: Int = 0,
+    /** Progress statistics as percentages instead of "done of planned" pairs. */
+    val showPercentInStats: Boolean = true
 )
 
 class SettingsStore(private val context: Context) {
@@ -35,6 +40,8 @@ class SettingsStore(private val context: Context) {
         val TIMER_LONG_ALERT = booleanPreferencesKey("timer_long_alert")
         val FIRST_DAY = stringPreferencesKey("first_day_of_week")
         val TIME_FORMAT = stringPreferencesKey("time_format")
+        val DAY_START = intPreferencesKey("day_start_hour")
+        val SHOW_PERCENT = booleanPreferencesKey("show_percent_in_stats")
     }
 
     val settings = context.settingsDataStore.data.map { prefs ->
@@ -48,7 +55,9 @@ class SettingsStore(private val context: Context) {
             vibrationEnabled = prefs[Keys.VIBRATION] ?: true,
             timerLongAlert = prefs[Keys.TIMER_LONG_ALERT] ?: false,
             firstDayOfWeek = prefs[Keys.FIRST_DAY] ?: "MONDAY",
-            timeFormat = prefs[Keys.TIME_FORMAT] ?: "24H"
+            timeFormat = prefs[Keys.TIME_FORMAT] ?: "24H",
+            dayStartHour = prefs[Keys.DAY_START] ?: 0,
+            showPercentInStats = prefs[Keys.SHOW_PERCENT] ?: true
         )
     }
 
@@ -61,6 +70,8 @@ class SettingsStore(private val context: Context) {
     suspend fun setTimerLongAlert(value: Boolean) = context.settingsDataStore.edit { it[Keys.TIMER_LONG_ALERT] = value }
     suspend fun setFirstDayOfWeek(value: String) = context.settingsDataStore.edit { it[Keys.FIRST_DAY] = value }
     suspend fun setTimeFormat(value: String) = context.settingsDataStore.edit { it[Keys.TIME_FORMAT] = value }
+    suspend fun setDayStartHour(value: Int) = context.settingsDataStore.edit { it[Keys.DAY_START] = value }
+    suspend fun setShowPercentInStats(value: Boolean) = context.settingsDataStore.edit { it[Keys.SHOW_PERCENT] = value }
 
     suspend fun setCustomSound(uri: String?) = context.settingsDataStore.edit { prefs ->
         if (uri == null) prefs.remove(Keys.CUSTOM_SOUND) else prefs[Keys.CUSTOM_SOUND] = uri
@@ -77,6 +88,8 @@ class SettingsStore(private val context: Context) {
             prefs[Keys.TIMER_LONG_ALERT] = settings.timerLongAlert
             prefs[Keys.FIRST_DAY] = settings.firstDayOfWeek
             prefs[Keys.TIME_FORMAT] = settings.timeFormat
+            prefs[Keys.DAY_START] = settings.dayStartHour
+            prefs[Keys.SHOW_PERCENT] = settings.showPercentInStats
             if (settings.customSoundUri == null) prefs.remove(Keys.CUSTOM_SOUND) else prefs[Keys.CUSTOM_SOUND] = settings.customSoundUri
         }
     }

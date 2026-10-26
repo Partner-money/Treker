@@ -35,6 +35,7 @@ import de.treker.habits.data.DailyRecordEntity
 import de.treker.habits.data.HabitEntity
 import de.treker.habits.data.UserSettings
 import de.treker.habits.data.UserTemplateEntity
+import de.treker.habits.domain.DayBoundary
 import de.treker.habits.domain.TimeFormat
 import de.treker.habits.domain.Tracking
 import de.treker.habits.domain.WeekOrder
@@ -57,7 +58,7 @@ fun TrekerApp(vm: HabitViewModel) {
     val records by vm.records.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val selectedDate by vm.selectedDate.collectAsStateWithLifecycle()
-    val today = LocalDate.now()
+    val today by vm.today.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var section by rememberSaveable { mutableStateOf(Section.HABITS.name) }
     var showNewHabit by remember { mutableStateOf(false) }
@@ -120,7 +121,7 @@ fun TrekerApp(vm: HabitViewModel) {
             }
         ) { padding ->
             when (Section.valueOf(section)) {
-                Section.HABITS -> HabitsScreen(habits, records, selectedDate, vm, now, settings.timeFormat, Modifier.padding(padding), onEdit = { editing = it; showNewHabit = true }, onCreate = { editing = null; showNewHabit = true }, onSaveTemplate = { vm.saveAsTemplate(it); dialogMessage = "Привычка сохранена в «Мои шаблоны»." })
+                Section.HABITS -> HabitsScreen(habits, records, selectedDate, today, vm, now, settings.timeFormat, Modifier.padding(padding), onEdit = { editing = it; showNewHabit = true }, onCreate = { editing = null; showNewHabit = true }, onSaveTemplate = { vm.saveAsTemplate(it); dialogMessage = "Привычка сохранена в «Мои шаблоны»." })
                 Section.TODAY -> TodayScreen(records, selectedDate, today, vm, now, Modifier.padding(padding))
                 Section.TEMPLATES -> TemplatesScreen(today, userTemplates, vm, Modifier.padding(padding), askForNotificationPermission)
                 Section.PROGRESS -> ProgressScreen(habits, records, selectedDate, today, settings, vm, Modifier.padding(padding))
@@ -138,7 +139,7 @@ fun TrekerApp(vm: HabitViewModel) {
         }
         if (showNewHabit) HabitEditorDialog(
             existing = editing,
-            date = LocalDate.now(),
+            date = today,
             settings = settings,
             onDismiss = { showNewHabit = false; vm.stopSoundPreview() },
             onSave = { vm.saveHabit(it); showNewHabit = false; vm.stopSoundPreview() },
@@ -158,7 +159,7 @@ fun TrekerApp(vm: HabitViewModel) {
 }
 
 @Composable
-private fun HabitsScreen(habits: List<HabitEntity>, records: List<DailyRecordEntity>, today: LocalDate, vm: HabitViewModel, now: Long, timeFormat: String, modifier: Modifier, onEdit: (HabitEntity) -> Unit, onCreate: () -> Unit, onSaveTemplate: (HabitEntity) -> Unit) {
+private fun HabitsScreen(habits: List<HabitEntity>, records: List<DailyRecordEntity>, today: LocalDate, currentDay: LocalDate, vm: HabitViewModel, now: Long, timeFormat: String, modifier: Modifier, onEdit: (HabitEntity) -> Unit, onCreate: () -> Unit, onSaveTemplate: (HabitEntity) -> Unit) {
     val byHabit = records.associateBy { it.habitId }
     val planned = records.size
     val done = records.count { it.status == Tracking.DONE }
@@ -169,7 +170,7 @@ private fun HabitsScreen(habits: List<HabitEntity>, records: List<DailyRecordEnt
             Text(greeting(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale("ru"))).replaceFirstChar { it.titlecase(Locale("ru")) }, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        item { DailySummary(done, planned, if (today == LocalDate.now()) "Сегодня" else today.format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru")))) }
+        item { DailySummary(done, planned, if (today == currentDay) "Сегодня" else today.format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru")))) }
         if (habits.none { !it.archived }) item { EmptyCard("Начни с одной полезной привычки", "Создай привычку или выбери готовый шаблон — дневной план появится здесь.", "Создать привычку", onClick = onCreate) }
         items(habits.filterNot { it.archived }, key = { it.id }) { habit ->
             val record = byHabit[habit.id]
@@ -421,10 +422,6 @@ private fun ProgressScreen(habits: List<HabitEntity>, records: List<DailyRecordE
     // Columns start on the configured first day of week, so the heat map reads like a calendar.
     val from = WeekOrder.alignedGridStart(today, settings.firstDayOfWeek, 365)
     val days = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= today }.toList()
-    val weekNow = rate(currentWeek)
-    val weekBefore = rate(previousWeek)
-    val dayRate = rate(dateMap[today].orEmpty())
-    val monthRate = rate(records.filter { LocalDate.parse(it.date).year == today.year && LocalDate.parse(it.date).month == today.month })
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("ТВОЯ ДИНАМИКА", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold); Text("Прогресс", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Активность считается по доле выполненных задач за день.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item {
@@ -455,8 +452,10 @@ private fun ProgressScreen(habits: List<HabitEntity>, records: List<DailyRecordE
                 }
             }
         }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { StatCard("Сегодня", "${dayRate}%", Modifier.weight(1f)); StatCard("За неделю", "${weekNow}%", Modifier.weight(1f)); StatCard("За месяц", "${monthRate}%", Modifier.weight(1f)) } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { StatCard("Прошлая неделя", "${weekBefore}%", Modifier.weight(1f)); StatCard("Активные", active.toString(), Modifier.weight(1f)) } }
+        val todayRecords = dateMap[today].orEmpty()
+        val monthRecords = records.filter { LocalDate.parse(it.date).year == today.year && LocalDate.parse(it.date).month == today.month }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { StatCard("Сегодня", statValue(todayRecords, settings.showPercentInStats), Modifier.weight(1f)); StatCard("За неделю", statValue(currentWeek, settings.showPercentInStats), Modifier.weight(1f)); StatCard("За месяц", statValue(monthRecords, settings.showPercentInStats), Modifier.weight(1f)) } }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { StatCard("Прошлая неделя", statValue(previousWeek, settings.showPercentInStats), Modifier.weight(1f)); StatCard("Активные", active.toString(), Modifier.weight(1f)) } }
         item {
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -575,7 +574,19 @@ private fun SettingsScreen(
                 FilterChip(TimeFormat.normalize(settings.timeFormat) == TimeFormat.H24, onClick = { vm.setTimeFormat(TimeFormat.H24) }, label = { Text("24 часа") })
                 FilterChip(TimeFormat.normalize(settings.timeFormat) == TimeFormat.H12, onClick = { vm.setTimeFormat(TimeFormat.H12) }, label = { Text("12 часов") })
             }
-            Text("Пример: ${TimeFormat.format(9 * 60 + 30, settings.timeFormat)} · новый день начинается в 00:00 по времени устройства.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Пример: ${TimeFormat.format(9 * 60 + 30, settings.timeFormat)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Начало нового дня", style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DayBoundary.allowedHours.forEach { hour ->
+                    FilterChip(DayBoundary.normalize(settings.dayStartHour) == hour, onClick = { vm.setDayStartHour(hour) }, label = { Text(DayBoundary.label(hour)) })
+                }
+            }
+            Text(DayBoundary.description(settings.dayStartHour), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Отображение прогресса", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(settings.showPercentInStats, onClick = { vm.setShowPercentInStats(true) }, label = { Text("Проценты") })
+                FilterChip(!settings.showPercentInStats, onClick = { vm.setShowPercentInStats(false) }, label = { Text("Выполнено из плана") })
+            }
         } }
         item { SettingsGroup("Данные на устройстве") {
             Text("Данные хранятся локально и не отправляются на сервер.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -649,3 +660,6 @@ private fun recordProgressSummary(record: DailyRecordEntity): String = when (rec
     else -> ""
 }
 private fun rate(records: List<DailyRecordEntity>): Int = if (records.isEmpty()) 0 else (100.0 * records.count { it.status == Tracking.DONE } / records.size).roundToInt()
+/** Progress value follows the user's display preference: percent or "done of planned". */
+private fun statValue(records: List<DailyRecordEntity>, showPercent: Boolean): String =
+    if (showPercent) "${rate(records)}%" else "${records.count { it.status == Tracking.DONE }} из ${records.size}"

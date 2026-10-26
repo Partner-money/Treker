@@ -10,31 +10,56 @@ import de.treker.habits.data.HabitEntity
 import de.treker.habits.data.HabitRepository
 import de.treker.habits.data.SettingsStore
 import de.treker.habits.data.UserSettings
+import de.treker.habits.domain.DayBoundary
 import de.treker.habits.notifications.ReminderScheduler
 import de.treker.habits.notifications.SoundPlayer
 import de.treker.habits.notifications.TimerAlarm
 import java.time.LocalDate
+import java.time.LocalDateTime
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class HabitViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = HabitRepository(AppDatabase.get(application))
     private val settingsStore = SettingsStore(application)
-    val selectedDate = MutableStateFlow(LocalDate.now())
+    val selectedDate = MutableStateFlow(DayBoundary.logicalDate(LocalDateTime.now(), DayBoundary.DEFAULT_HOUR))
     val settings = settingsStore.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UserSettings())
     val habits = repository.habits.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val userTemplates = repository.userTemplates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val records = combine(repository.allRecords, selectedDate) { all, date -> all.filter { it.date == date.toString() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val clockTick = flow { while (true) { emit(Unit); delay(30_000) } }
+
+    /** Current habit day respecting the "new day starts at" setting; refreshed while the app is open. */
+    val today = combine(settingsStore.settings.map { it.dayStartHour }.distinctUntilChanged(), clockTick) { hour, _ ->
+        DayBoundary.logicalDate(LocalDateTime.now(), hour)
+    }.distinctUntilChanged().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        DayBoundary.logicalDate(LocalDateTime.now(), DayBoundary.DEFAULT_HOUR)
+    )
+
     init {
         viewModelScope.launch {
             repository.completeElapsedTimers()
-            repository.ensureDay(LocalDate.now())
+            // Follow the habit day so an app left open overnight switches to the new date.
+            var previous = selectedDate.value
+            today.collect { current ->
+                if (selectedDate.value == previous) selectedDate.value = current
+                previous = current
+                repository.ensureDay(current)
+            }
+        }
+        viewModelScope.launch {
             val enabled = settingsStore.settings.first().remindersEnabled
             ReminderScheduler.syncAll(getApplication(), enabled)
             repository.allRecordsOnce().filter { it.timerRunning && it.timerDeadlineMillis != null }.forEach { TimerAlarm.schedule(getApplication(), it.id, it.timerDeadlineMillis!!) }
@@ -47,9 +72,10 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveHabit(habit: HabitEntity) = viewModelScope.launch {
-        val id = repository.saveHabit(habit, LocalDate.now())
+        val date = today.value
+        val id = repository.saveHabit(habit, date)
         repository.allHabitsOnce().firstOrNull { it.id == id }?.let { ReminderScheduler.sync(getApplication(), it, settings.value.remindersEnabled) }
-        val timerRecord = repository.recordFor(id, LocalDate.now())
+        val timerRecord = repository.recordFor(id, date)
         if (timerRecord?.timerRunning == true && timerRecord.timerDeadlineMillis != null) TimerAlarm.schedule(getApplication(), timerRecord.id, timerRecord.timerDeadlineMillis)
         else if (timerRecord != null) TimerAlarm.cancel(getApplication(), timerRecord.id)
     }
@@ -65,8 +91,8 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun addSession(record: DailyRecordEntity, minutes: Int) = viewModelScope.launch { repository.addAccumulatedSession(record.id, minutes) }
     fun saveAsTemplate(habit: HabitEntity) = viewModelScope.launch { repository.saveAsTemplate(habit) }
     fun deleteTemplate(templateId: Long) = viewModelScope.launch { repository.deleteTemplate(templateId) }
-    fun togglePause(habit: HabitEntity) = viewModelScope.launch { repository.saveHabit(habit.copy(paused = !habit.paused), LocalDate.now()); ReminderScheduler.sync(getApplication(), habit.copy(paused = !habit.paused), settings.value.remindersEnabled) }
-    fun archive(habit: HabitEntity) = viewModelScope.launch { repository.updateTitleAndArchive(habit, null, true, LocalDate.now()); ReminderScheduler.cancel(getApplication(), habit.id) }
+    fun togglePause(habit: HabitEntity) = viewModelScope.launch { repository.saveHabit(habit.copy(paused = !habit.paused), today.value); ReminderScheduler.sync(getApplication(), habit.copy(paused = !habit.paused), settings.value.remindersEnabled) }
+    fun archive(habit: HabitEntity) = viewModelScope.launch { repository.updateTitleAndArchive(habit, null, true, today.value); ReminderScheduler.cancel(getApplication(), habit.id) }
     fun rename(habit: HabitEntity, title: String) = viewModelScope.launch { repository.saveHabit(habit.copy(title = title), selectedDate.value) }
     fun setTheme(value: String) = viewModelScope.launch { settingsStore.setTheme(value) }
     fun setReminders(value: Boolean) = viewModelScope.launch { settingsStore.setReminders(value); ReminderScheduler.syncAll(getApplication(), value) }
@@ -77,6 +103,8 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun setTimerLongAlert(value: Boolean) = viewModelScope.launch { settingsStore.setTimerLongAlert(value) }
     fun setFirstDayOfWeek(value: String) = viewModelScope.launch { settingsStore.setFirstDayOfWeek(value) }
     fun setTimeFormat(value: String) = viewModelScope.launch { settingsStore.setTimeFormat(value) }
+    fun setDayStartHour(value: Int) = viewModelScope.launch { settingsStore.setDayStartHour(DayBoundary.normalize(value)) }
+    fun setShowPercentInStats(value: Boolean) = viewModelScope.launch { settingsStore.setShowPercentInStats(value) }
 
     /** Stores a user-picked audio file; the URI is kept readable through a persisted permission. */
     fun setCustomSound(uri: String?) = viewModelScope.launch {
@@ -123,7 +151,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                     vibrationEnabled = if ("vibrationEnabled" in keys) sanitized.vibrationEnabled else current.vibrationEnabled,
                     timerLongAlert = if ("timerLongAlert" in keys) sanitized.timerLongAlert else current.timerLongAlert,
                     firstDayOfWeek = if ("firstDayOfWeek" in keys) sanitized.firstDayOfWeek else current.firstDayOfWeek,
-                    timeFormat = if ("timeFormat" in keys) sanitized.timeFormat else current.timeFormat
+                    timeFormat = if ("timeFormat" in keys) sanitized.timeFormat else current.timeFormat,
+                    dayStartHour = if ("dayStartHour" in keys) sanitized.dayStartHour else current.dayStartHour,
+                    showPercentInStats = if ("showPercentInStats" in keys) sanitized.showPercentInStats else current.showPercentInStats
                 )
             )
         }
@@ -134,7 +164,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun clearHistory() = viewModelScope.launch {
         repository.allRecordsOnce().forEach { TimerAlarm.cancel(getApplication(), it.id) }
         repository.clearHistory()
-        repository.ensureDay(LocalDate.now())
+        repository.ensureDay(today.value)
     }
     fun resetAll() = viewModelScope.launch {
         repository.allHabitsOnce().forEach { ReminderScheduler.cancel(getApplication(), it.id) }
