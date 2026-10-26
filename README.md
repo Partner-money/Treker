@@ -33,7 +33,7 @@ APK появится в `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### GitHub Actions
 
-Workflow `.github/workflows/android.yml` на push и вручную запускает unit-тесты, собирает debug APK, затем прогоняет Android-инструментальные тесты на эмуляторе API 30 (`aosp_atd`). Последний проверенный запуск: [Actions run 40373216541](https://github.com/Partner-money/Treker/actions/runs/40373216541) — успешно. APK доступен в Actions → Artifacts (`treker-debug-apk`). Для локальной сборки нужны JDK 17 и Android SDK 35; `gradlew` скачает Gradle 8.9.
+Workflow `.github/workflows/android.yml` на push и вручную запускает unit-тесты, собирает debug APK, затем прогоняет Android-инструментальные тесты на эмуляторе API 30 (`aosp_atd`). Последний проверенный запуск: [Actions run 40374919883](https://github.com/Partner-money/Treker/actions/runs/40374919883) — успешно. APK доступен в Actions → Artifacts (`treker-debug-apk`). Для локальной сборки нужны JDK 17 и Android SDK 35; `gradlew` скачает Gradle 8.9.
 
 ## Установка на Samsung / Android
 
