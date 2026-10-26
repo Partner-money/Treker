@@ -50,7 +50,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 1200
           script: |
-            bash -c './gradlew --stop >/dev/null 2>&1 || true; ./gradlew --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx1280m -XX:MaxMetaspaceSize=384m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log; status=${PIPESTATUS[0]}; adb logcat -d > logcat.txt 2>&1 || true; adb shell pm list packages > installed-packages.txt 2>&1 || true; exit $status'
+            bash -c 'adb kill-server >/dev/null 2>&1 || true; adb start-server >/dev/null 2>&1 || true; adb wait-for-device; adb devices; ./gradlew --stop >/dev/null 2>&1 || true; ./gradlew --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx1280m -XX:MaxMetaspaceSize=384m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log; status=${PIPESTATUS[0]}; adb logcat -d > logcat.txt 2>&1 || true; adb shell pm list packages > installed-packages.txt 2>&1 || true; exit $status'
       - name: Report Gradle diagnostics
         if: always()
         run: |
