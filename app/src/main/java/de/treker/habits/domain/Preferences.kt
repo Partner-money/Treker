@@ -16,8 +16,11 @@ object WeekOrder {
 
     fun normalize(value: String?): String = if (value == SUNDAY) SUNDAY else MONDAY
 
-    fun days(firstDay: String): List<DayOfWeek> =
-        if (normalize(firstDay) == SUNDAY) MONDAY_FIRST.drop(1) + MONDAY_FIRST.first() else MONDAY_FIRST
+    fun days(firstDay: String): List<DayOfWeek> {
+        if (normalize(firstDay) != SUNDAY) return MONDAY_FIRST
+        // Sunday-first week keeps ISO weekday values intact: rotate Monday..Sunday by six days.
+        return MONDAY_FIRST.takeLast(1) + MONDAY_FIRST.dropLast(1)
+    }
 
     fun shortLabels(firstDay: String): List<String> = days(firstDay).map { label(it) }
 
