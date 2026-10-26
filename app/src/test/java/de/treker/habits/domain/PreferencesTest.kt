@@ -20,10 +20,12 @@ class PreferencesTest {
     @Test fun weekdayBitsStayIsoAlignedInBothOrders() {
         assertEquals(1, WeekOrder.bit(DayOfWeek.MONDAY))
         assertEquals(1 shl 6, WeekOrder.bit(DayOfWeek.SUNDAY))
-        val mondayFirst = WeekOrder.days(WeekOrder.MONDAY)
-        val sundayFirst = WeekOrder.days(WeekOrder.SUNDAY)
-        mondayFirst.zip(sundayFirst).forEach { (left, right) ->
-            assertEquals("Каждый день недели должен иметь одинаковый бит", WeekOrder.bit(left), WeekOrder.bit(right))
+        // The display order changes, but the stored ISO bit of each weekday must not.
+        listOf(WeekOrder.MONDAY, WeekOrder.SUNDAY).forEach { firstDay ->
+            WeekOrder.days(firstDay).forEach { day ->
+                assertEquals(1 shl (day.value - 1), WeekOrder.bit(day))
+            }
+            assertEquals(7, WeekOrder.days(firstDay).toSet().size)
         }
     }
 
