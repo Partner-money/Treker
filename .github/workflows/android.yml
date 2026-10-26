@@ -51,48 +51,74 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 1200
           script: |
-            bash -c 'set -o pipefail; ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log'
+            bash -c './gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log; status=${PIPESTATUS[0]}; adb logcat -d > logcat.txt 2>&1 || true; adb shell pm list packages > installed-packages.txt 2>&1 || true; exit $status'
       - name: Report Gradle diagnostics
-        if: failure()
+        if: always()
         run: |
           python3 - <<'PY'
-          import os, re, xml.etree.ElementTree as ET
+          import os
+          import re
+          import xml.etree.ElementTree as ET
           from pathlib import Path
-          paths = [Path("gradle-unit.log"), Path("gradle-android.log"), Path("gradle-assemble.log")]
-          markers = re.compile(r"(^e: | error:|FAILED|FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find|Unresolved reference|AssertionError|BUILD FAILED|Tests on |There were failing tests|INSTALL_FAILED|Timeout waiting|Tests on )", re.IGNORECASE)
-          messages = []
-          for path in paths:
-              if path.exists():
-                  lines = path.read_text(errors="replace").splitlines()
-                  messages.extend(line.strip() for line in lines if markers.search(line))
-          for report in list(Path("app/build/test-results").rglob("*.xml")) + list(Path("app/build/outputs/androidTest-results").rglob("*.xml")):
+
+          important = []
+          reports = list(Path("app/build/test-results").rglob("*.xml")) + list(
+              Path("app/build/outputs/androidTest-results").rglob("*.xml")
+          )
+          for report in reports:
               try:
                   root = ET.parse(report).getroot()
-                  for case in root.iter("testcase"):
-                      for failure in list(case.findall("failure")) + list(case.findall("error")):
-                          messages.append(f"{case.get('classname')} > {case.get('name')}: {failure.get('message', failure.get('type', 'test failure'))}")
-                          if failure.text:
-                              messages.extend(line.strip() for line in failure.text.splitlines()[:12])
-              except ET.ParseError as error:
-                  messages.append(f"Could not parse {report}: {error}")
-          if not messages:
-              for path in paths:
-                  if path.exists(): messages.extend(path.read_text(errors="replace").splitlines()[-20:])
-          messages = list(dict.fromkeys(messages))[-30:]
-          summary = ["## Gradle diagnostics", ""] + [f"- `{message}`" for message in messages]
+              except ET.ParseError:
+                  continue
+              for case in root.iter("testcase"):
+                  for failure in list(case.findall("failure")) + list(case.findall("error")):
+                      header = f"{case.get('classname')} > {case.get('name')}"
+                      message = (failure.get("message") or failure.get("type") or "").strip()
+                      important.append(f"{header}: {message}".strip())
+                      if failure.text:
+                          important.extend(line.strip() for line in failure.text.splitlines()[:15] if line.strip())
+
+          logcat = Path("logcat.txt")
+          if logcat.exists():
+              lines = logcat.read_text(errors="replace").splitlines()
+              for index, line in enumerate(lines):
+                  if "FATAL EXCEPTION" in line or "AndroidRuntime" in line and "FATAL" in line:
+                      important.append("LOGCAT: " + line.strip())
+                      important.extend(item.strip() for item in lines[index + 1:index + 25])
+                      break
+
+          log_lines = []
+          marker = re.compile(
+              r"(^e: |FAILED|FAILURE: Build failed|What went wrong:|Execution failed for task"
+              r"|Unresolved reference|AssertionError|BUILD FAILED|Timeout waiting|INSTALL_FAILED"
+              r"|Tests on |There were failing tests|Process crashed)",
+              re.IGNORECASE,
+          )
+          for path in [Path("gradle-unit.log"), Path("gradle-assemble.log"), Path("gradle-android.log")]:
+              if path.exists():
+                  log_lines.extend(
+                      line.strip() for line in path.read_text(errors="replace").splitlines() if marker.search(line)
+                  )
+
+          important = list(dict.fromkeys(important))[:20]
+          log_lines = list(dict.fromkeys(log_lines))[-15:]
+          messages = important + log_lines
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
-              output.write(chr(10).join(summary) + chr(10))
+              output.write("## Test and build diagnostics" + chr(10) + chr(10))
+              output.write((chr(10).join("- `" + message + "`" for message in messages) or "- No failures detected") + chr(10))
           for message in messages:
               safe = message.replace("%", "%25").replace(chr(13), "%0D").replace(chr(10), "%0A")
               print(f"::error::{safe[:4000]}")
           PY
       - name: Upload Gradle diagnostics
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gradle-diagnostics
           path: |
             gradle-*.log
+            logcat.txt
+            installed-packages.txt
             app/build/test-results/**/*.xml
             app/build/outputs/androidTest-results/**/*.xml
           if-no-files-found: ignore
