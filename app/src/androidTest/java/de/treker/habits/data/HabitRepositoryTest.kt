@@ -73,6 +73,22 @@ class HabitRepositoryTest {
         assertEquals(60_000L, completed?.actualDurationMillis)
     }
 
+    @Test fun habitSoundOverrideSurvivesEditAndReload() = runBlocking {
+        val today = LocalDate.now()
+        val id = repository.saveHabit(
+            habit("Чтение", date = today).copy(soundChoice = "BEEP", soundUri = "content://media/external/audio/media/5"),
+            today
+        )
+        val saved = repository.allHabitsOnce().single { it.id == id }
+        assertEquals("BEEP", saved.soundChoice)
+        assertEquals("content://media/external/audio/media/5", saved.soundUri)
+
+        repository.saveHabit(saved.copy(title = "Чтение вечером"), today)
+        val updated = repository.allHabitsOnce().single { it.id == id }
+        assertEquals("Чтение вечером", updated.title)
+        assertEquals("BEEP", updated.soundChoice)
+    }
+
     private fun habit(
         name: String,
         date: LocalDate,

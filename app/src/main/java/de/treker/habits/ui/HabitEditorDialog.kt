@@ -14,18 +14,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import de.treker.habits.data.HabitEntity
+import de.treker.habits.data.UserSettings
+import de.treker.habits.domain.TimeFormat
 import de.treker.habits.domain.Tracking
-import java.time.DayOfWeek
+import de.treker.habits.domain.WeekOrder
+import de.treker.habits.notifications.Sounds
 import java.time.LocalDate
-import java.time.format.DateTimeParseException
 
 @Composable
 fun HabitEditorDialog(
     existing: HabitEntity?,
     date: LocalDate,
     initial: Any? = null,
+    settings: UserSettings = UserSettings(),
     onDismiss: () -> Unit,
     onSave: (HabitEntity) -> Unit,
+    onPreviewSound: (String, String?) -> Unit = { _, _ -> },
     onReminderPermission: () -> Unit = {}
 ) {
     val preset = initial as? TemplateInput
@@ -39,13 +43,15 @@ fun HabitEditorDialog(
     var onceDate by remember(existing) { mutableStateOf(existing?.onceDate ?: date.toString()) }
     var selectedDays by remember(existing, initial) { mutableStateOf(existing?.scheduleMask ?: preset?.scheduleMask ?: 127) }
     var reminderEnabled by remember(existing) { mutableStateOf(existing?.reminderEnabled ?: false) }
-    var reminderTime by remember(existing) { mutableStateOf(existing?.reminderMinute?.let { "%02d:%02d".format(it / 60, it % 60) } ?: "09:00") }
+    var reminderTime by remember(existing) { mutableStateOf(TimeFormat.editValue(existing?.reminderMinute).ifBlank { "09:00" }) }
+    var soundChoice by remember(existing) { mutableStateOf(existing?.soundChoice) }
+    var soundUri by remember(existing) { mutableStateOf(existing?.soundUri) }
     var selectedColor by remember(existing, initial) { mutableLongStateOf(existing?.color ?: preset?.color ?: 0xFF5C6BC0) }
     var typeMenu by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val categories = listOf("Спорт", "Здоровье", "Обучение", "Продуктивность", "Саморазвитие", "Отдых", "Личное")
     val types = listOf(Tracking.SIMPLE to "Простое действие", Tracking.COUNTER to "Счётчик количества", Tracking.TIMER to "Таймер", Tracking.ACCUMULATE to "Накопление времени")
-    val weekdays = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+    val orderedDays = WeekOrder.days(settings.firstDayOfWeek)
     val colors = listOf(0xFF5C6BC0, 0xFF00897B, 0xFFE16C5B, 0xFF8E63BA, 0xFFE5A33D, 0xFF3979B9)
 
     AlertDialog(
@@ -74,15 +80,40 @@ fun HabitEditorDialog(
                     FilterChip(scheduleMode == "ONCE", { scheduleMode = "ONCE" }, label = { Text("Один раз") })
                 }
                 if (scheduleMode == "WEEKLY") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { weekdays.forEachIndexed { index, day ->
-                        val checked = selectedDays and (1 shl index) != 0
-                        FilterChip(checked, { selectedDays = if (checked) selectedDays and (1 shl index).inv() else selectedDays or (1 shl index) }, label = { Text(day) })
-                    } }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        orderedDays.forEach { day ->
+                            val bit = WeekOrder.bit(day)
+                            val checked = selectedDays and bit != 0
+                            FilterChip(checked, { selectedDays = if (checked) selectedDays and bit.inv() else selectedDays or bit }, label = { Text(WeekOrder.label(day)) })
+                        }
+                    }
                 } else {
                     OutlinedTextField(onceDate, { onceDate = it }, label = { Text("Дата (ГГГГ-ММ-ДД)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Text("Ежедневное напоминание"); Switch(reminderEnabled, { reminderEnabled = it; if (it) onReminderPermission() }) }
-                if (reminderEnabled) OutlinedTextField(reminderTime, { reminderTime = it }, label = { Text("Время (ЧЧ:ММ)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (reminderEnabled) {
+                    OutlinedTextField(
+                        reminderTime, { reminderTime = it },
+                        label = { Text("Время") },
+                        supportingText = { Text("Например, 09:30 или 9:30 PM") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Звук напоминания", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    SoundChooser(
+                        selected = soundChoice,
+                        customUri = if (soundChoice == Sounds.CUSTOM) soundUri else null,
+                        allowInherit = true,
+                        inheritLabel = "Как в настройках",
+                        onSelect = { soundChoice = it },
+                        onPickedUri = { soundUri = it; soundChoice = Sounds.CUSTOM },
+                        onPreview = {
+                            val (previewChoice, previewUri) = Sounds.effective(soundChoice, soundUri, settings.soundChoice, settings.customSoundUri)
+                            onPreviewSound(previewChoice, previewUri)
+                        },
+                        onMessage = { error = it }
+                    )
+                }
                 Text("Акцентный цвет", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) { colors.forEach { color ->
                     Surface(onClick = { selectedColor = color }, shape = RoundedCornerShape(50), color = Color(color), modifier = Modifier.size(34.dp)) { if (selectedColor == color) Icon(Icons.Outlined.Check, null, tint = Color.White, modifier = Modifier.padding(7.dp)) }
@@ -92,16 +123,13 @@ fun HabitEditorDialog(
         },
         confirmButton = { TextButton(onClick = {
             val parsedTarget = target.replace(',', '.').toDoubleOrNull()
-            val parsedTime = runCatching {
-                val (hour, minute) = reminderTime.split(":").map { it.toInt() }
-                require(hour in 0..23 && minute in 0..59)
-                hour * 60 + minute
-            }.getOrNull()
+            val parsedTime = TimeFormat.parse(reminderTime)
             if (title.isBlank()) error = "Укажи название привычки."
             else if (category.isBlank()) error = "Укажи категорию или выбери одну из подсказок."
             else if (type != Tracking.SIMPLE && (parsedTarget == null || !parsedTarget.isFinite() || parsedTarget <= 0.0)) error = "Цель должна быть конечным числом больше нуля."
             else if (scheduleMode == "WEEKLY" && selectedDays == 0) error = "Выбери хотя бы один день недели."
-            else if (reminderEnabled && parsedTime == null) error = "Время должно быть в формате ЧЧ:ММ."
+            else if (reminderEnabled && parsedTime == null) error = "Время должно быть в формате ЧЧ:ММ (или 9:30 PM)."
+            else if (reminderEnabled && soundChoice == Sounds.CUSTOM && soundUri == null) error = "Выбери аудиофайл для звука напоминания."
             else if (scheduleMode == "ONCE" && runCatching { LocalDate.parse(onceDate) }.isFailure) error = "Дата должна быть в формате ГГГГ-ММ-ДД."
             else {
                 val safeTarget = if (type == Tracking.SIMPLE) 1.0 else parsedTarget ?: 1.0
@@ -111,7 +139,10 @@ fun HabitEditorDialog(
                     unit = if (type == Tracking.TIMER || type == Tracking.ACCUMULATE) "мин" else unit.trim().ifBlank { "раз" },
                     scheduleMode = scheduleMode, scheduleMask = if (scheduleMode == "ONCE") 127 else selectedDays,
                     onceDate = if (scheduleMode == "ONCE") onceDate else null, reminderMinute = if (reminderEnabled) parsedTime else null,
-                    reminderEnabled = reminderEnabled, createdDate = existing?.createdDate ?: date.toString(),
+                    reminderEnabled = reminderEnabled,
+                    soundChoice = if (reminderEnabled) soundChoice else existing?.soundChoice,
+                    soundUri = if (reminderEnabled && soundChoice == Sounds.CUSTOM) soundUri else null,
+                    createdDate = existing?.createdDate ?: date.toString(),
                     paused = existing?.paused ?: false, archived = existing?.archived ?: false, archivedDate = existing?.archivedDate
                 ))
             }

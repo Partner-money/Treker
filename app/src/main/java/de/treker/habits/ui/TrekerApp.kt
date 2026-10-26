@@ -35,7 +35,11 @@ import de.treker.habits.data.DailyRecordEntity
 import de.treker.habits.data.HabitEntity
 import de.treker.habits.data.UserSettings
 import de.treker.habits.data.UserTemplateEntity
+import de.treker.habits.domain.TimeFormat
 import de.treker.habits.domain.Tracking
+import de.treker.habits.domain.WeekOrder
+import de.treker.habits.notifications.NotificationChannels
+import de.treker.habits.notifications.Sounds
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -90,6 +94,8 @@ fun TrekerApp(vm: HabitViewModel) {
         if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    val notificationsBlocked = remember(settings.remindersEnabled) { NotificationChannels.notificationsBlockedBySystem(context) }
+    DisposableEffect(Unit) { onDispose { vm.stopSoundPreview() } }
     val dark = when (settings.theme) { "DARK" -> true; "LIGHT" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
     val accent = Color(settings.accentColor)
     val colors = if (dark) darkColorScheme(primary = accent, secondary = accent, background = Color(0xFF101116), surface = Color(0xFF191A22))
@@ -114,20 +120,31 @@ fun TrekerApp(vm: HabitViewModel) {
             }
         ) { padding ->
             when (Section.valueOf(section)) {
-                Section.HABITS -> HabitsScreen(habits, records, selectedDate, vm, now, Modifier.padding(padding), onEdit = { editing = it; showNewHabit = true }, onCreate = { editing = null; showNewHabit = true }, onSaveTemplate = { vm.saveAsTemplate(it); dialogMessage = "Привычка сохранена в «Мои шаблоны»." })
+                Section.HABITS -> HabitsScreen(habits, records, selectedDate, vm, now, settings.timeFormat, Modifier.padding(padding), onEdit = { editing = it; showNewHabit = true }, onCreate = { editing = null; showNewHabit = true }, onSaveTemplate = { vm.saveAsTemplate(it); dialogMessage = "Привычка сохранена в «Мои шаблоны»." })
                 Section.TODAY -> TodayScreen(records, selectedDate, today, vm, now, Modifier.padding(padding))
                 Section.TEMPLATES -> TemplatesScreen(today, userTemplates, vm, Modifier.padding(padding), askForNotificationPermission)
-                Section.PROGRESS -> ProgressScreen(habits, records, selectedDate, today, vm, Modifier.padding(padding))
+                Section.PROGRESS -> ProgressScreen(habits, records, selectedDate, today, settings, vm, Modifier.padding(padding))
                 Section.SETTINGS -> SettingsScreen(settings, vm, Modifier.padding(padding),
                     onExport = { exportLauncher.launch("treker-backup-${LocalDate.now()}.json") },
                     onImport = { importLauncher.launch(arrayOf("application/json", "text/*")) },
                     onNotificationsChanged = { enabled ->
                         vm.setReminders(enabled)
                         if (enabled && android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    })
+                    },
+                    notificationsBlocked = notificationsBlocked,
+                    onOpenSystemSettings = { runCatching { context.startActivity(NotificationChannels.systemSettingsIntent(context)) } },
+                    onMessage = { message -> dialogMessage = message })
             }
         }
-        if (showNewHabit) HabitEditorDialog(editing, LocalDate.now(), onDismiss = { showNewHabit = false }, onSave = { vm.saveHabit(it); showNewHabit = false }, onReminderPermission = askForNotificationPermission)
+        if (showNewHabit) HabitEditorDialog(
+            existing = editing,
+            date = LocalDate.now(),
+            settings = settings,
+            onDismiss = { showNewHabit = false; vm.stopSoundPreview() },
+            onSave = { vm.saveHabit(it); showNewHabit = false; vm.stopSoundPreview() },
+            onPreviewSound = { choice, uri -> vm.previewSound(choice, uri, settings.vibrationEnabled) },
+            onReminderPermission = askForNotificationPermission
+        )
         pendingImport?.let { json ->
             AlertDialog(onDismissRequest = { pendingImport = null }, title = { Text("Заменить текущие данные?") },
                 text = { Text("Импорт заменит привычки, историю, пользовательские шаблоны и включённые в копию настройки. Сначала убедитесь, что у вас есть актуальная резервная копия.") },
@@ -141,7 +158,7 @@ fun TrekerApp(vm: HabitViewModel) {
 }
 
 @Composable
-private fun HabitsScreen(habits: List<HabitEntity>, records: List<DailyRecordEntity>, today: LocalDate, vm: HabitViewModel, now: Long, modifier: Modifier, onEdit: (HabitEntity) -> Unit, onCreate: () -> Unit, onSaveTemplate: (HabitEntity) -> Unit) {
+private fun HabitsScreen(habits: List<HabitEntity>, records: List<DailyRecordEntity>, today: LocalDate, vm: HabitViewModel, now: Long, timeFormat: String, modifier: Modifier, onEdit: (HabitEntity) -> Unit, onCreate: () -> Unit, onSaveTemplate: (HabitEntity) -> Unit) {
     val byHabit = records.associateBy { it.habitId }
     val planned = records.size
     val done = records.count { it.status == Tracking.DONE }
@@ -156,7 +173,7 @@ private fun HabitsScreen(habits: List<HabitEntity>, records: List<DailyRecordEnt
         if (habits.none { !it.archived }) item { EmptyCard("Начни с одной полезной привычки", "Создай привычку или выбери готовый шаблон — дневной план появится здесь.", "Создать привычку", onClick = onCreate) }
         items(habits.filterNot { it.archived }, key = { it.id }) { habit ->
             val record = byHabit[habit.id]
-            if (record != null) HabitCard(habit, record, vm, now, onEdit = { onEdit(habit) }, onArchive = { vm.archive(habit) }, onPause = { vm.togglePause(habit) }, onSaveTemplate = { onSaveTemplate(habit) })
+            if (record != null) HabitCard(habit, record, vm, now, timeFormat, onEdit = { onEdit(habit) }, onArchive = { vm.archive(habit) }, onPause = { vm.togglePause(habit) }, onSaveTemplate = { onSaveTemplate(habit) })
         }
     }
 }
@@ -179,7 +196,7 @@ private fun DailySummary(done: Int, planned: Int, heading: String = "Сегод�
 }
 
 @Composable
-private fun HabitCard(habit: HabitEntity, record: DailyRecordEntity, vm: HabitViewModel, now: Long, onEdit: () -> Unit, onArchive: () -> Unit, onPause: () -> Unit, onSaveTemplate: () -> Unit) {
+private fun HabitCard(habit: HabitEntity, record: DailyRecordEntity, vm: HabitViewModel, now: Long, timeFormat: String, onEdit: () -> Unit, onArchive: () -> Unit, onPause: () -> Unit, onSaveTemplate: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var amountDialog by remember { mutableStateOf<String?>(null) }
     var amountText by remember { mutableStateOf("") }
@@ -198,6 +215,13 @@ private fun HabitCard(habit: HabitEntity, record: DailyRecordEntity, vm: HabitVi
                 Column(Modifier.weight(1f)) {
                     Text(record.titleSnapshot, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textDecoration = if (record.status == Tracking.DONE) TextDecoration.LineThrough else null, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${habit.category} · ${trackingLabel(record.typeSnapshot)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (habit.reminderEnabled && habit.reminderMinute != null) {
+                        Text(
+                            "Напоминание в ${TimeFormat.format(habit.reminderMinute, timeFormat)}" + (habit.soundChoice?.let { " · ${Sounds.label(it)}" } ?: ""),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Действия") }
@@ -384,7 +408,7 @@ private fun TemplatesScreen(date: LocalDate, userTemplates: List<UserTemplateEnt
 }
 
 @Composable
-private fun ProgressScreen(habits: List<HabitEntity>, records: List<DailyRecordEntity>, selected: LocalDate, today: LocalDate, vm: HabitViewModel, modifier: Modifier) {
+private fun ProgressScreen(habits: List<HabitEntity>, records: List<DailyRecordEntity>, selected: LocalDate, today: LocalDate, settings: UserSettings, vm: HabitViewModel, modifier: Modifier) {
     var detailHabitId by rememberSaveable { mutableStateOf<Long?>(null) }
     val dateMap = records.groupBy { runCatching { LocalDate.parse(it.date) }.getOrNull() }.filterKeys { it != null }.mapKeys { it.key!! }
     val currentWeek = records.filter { LocalDate.parse(it.date) >= today.minusDays(6) && LocalDate.parse(it.date) <= today }
@@ -394,8 +418,9 @@ private fun ProgressScreen(habits: List<HabitEntity>, records: List<DailyRecordE
     val successfulDays = dateMap.mapValues { (_, day) -> day.size to day.count { it.status == Tracking.DONE } }
     val currentStreak = Tracking.currentStreak(successfulDays, today)
     val longest = Tracking.longestStreak(successfulDays)
-    val from = today.minusDays(364)
-    val days = (0..364).map { from.plusDays(it.toLong()) }
+    // Columns start on the configured first day of week, so the heat map reads like a calendar.
+    val from = WeekOrder.alignedGridStart(today, settings.firstDayOfWeek, 365)
+    val days = generateSequence(from) { it.plusDays(1) }.takeWhile { it <= today }.toList()
     val weekNow = rate(currentWeek)
     val weekBefore = rate(previousWeek)
     val dayRate = rate(dateMap[today].orEmpty())
@@ -413,6 +438,7 @@ private fun ProgressScreen(habits: List<HabitEntity>, records: List<DailyRecordE
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Активность · последние 12 месяцев", fontWeight = FontWeight.SemiBold)
+                    Text("Неделя начинается с ${if (WeekOrder.normalize(settings.firstDayOfWeek) == WeekOrder.SUNDAY) "воскресенья" else "понедельника"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         days.chunked(7).forEach { week ->
                             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -484,7 +510,17 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun SettingsScreen(settings: UserSettings, vm: HabitViewModel, modifier: Modifier, onExport: () -> Unit, onImport: () -> Unit, onNotificationsChanged: (Boolean) -> Unit) {
+private fun SettingsScreen(
+    settings: UserSettings,
+    vm: HabitViewModel,
+    modifier: Modifier,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    onNotificationsChanged: (Boolean) -> Unit,
+    notificationsBlocked: Boolean,
+    onOpenSystemSettings: () -> Unit,
+    onMessage: (String) -> Unit
+) {
     var confirmAction by remember { mutableStateOf<String?>(null) }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("ПЕРСОНАЛИЗАЦИЯ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold); Text("Настройки", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
@@ -502,10 +538,44 @@ private fun SettingsScreen(settings: UserSettings, vm: HabitViewModel, modifier:
                 }
             }
         }
-        item { SettingsGroup("Напоминания и звук") {
-            SettingSwitch("Напоминания", "Разрешение Android может потребоваться отдельно.", settings.remindersEnabled, onNotificationsChanged)
+        item { SettingsGroup("Напоминания") {
+            SettingSwitch("Напоминания", "Время и дни задаются в настройках привычки.", settings.remindersEnabled, onNotificationsChanged)
+            if (notificationsBlocked) {
+                Text("Android блокирует уведомления приложения. Напоминания не появятся, пока вы не разрешите их в системных настройках.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onOpenSystemSettings) { Text("Открыть настройки Android") }
+            } else {
+                Text("Доставка может зависеть от режима энергосбережения и ограничений One UI; точное время не гарантируется.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } }
+        item { SettingsGroup("Звуки") {
             SettingSwitch("Звук уведомлений", "Системная громкость и беззвучный режим имеют приоритет.", settings.soundEnabled) { vm.setSound(it) }
-            Text("Напоминания задаются в настройках привычки. Доставка может зависеть от режима энергосбережения и ограничений One UI.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Звук напоминаний", style = MaterialTheme.typography.labelLarge)
+            SoundChooser(
+                selected = settings.soundChoice,
+                customUri = settings.customSoundUri,
+                allowInherit = false,
+                inheritLabel = "Как в настройках",
+                onSelect = { choice -> choice?.let { vm.setSoundChoice(it) } },
+                onPickedUri = { vm.setCustomSound(it) },
+                onPreview = { vm.previewSound(settings.soundChoice, settings.customSoundUri, settings.vibrationEnabled) },
+                onMessage = onMessage
+            )
+            SettingSwitch("Вибрация", "Короткая вибрация вместе с уведомлением.", settings.vibrationEnabled) { vm.setVibration(it) }
+            SettingSwitch("Продолжительный сигнал таймера", "Более заметный звук по завершении таймера. Учитывает беззвучный режим.", settings.timerLongAlert) { vm.setTimerLongAlert(it) }
+            Text("Отдельный звук можно назначить каждой привычке в её настройках.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } }
+        item { SettingsGroup("Поведение") {
+            Text("Первый день недели", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(WeekOrder.normalize(settings.firstDayOfWeek) == WeekOrder.MONDAY, onClick = { vm.setFirstDayOfWeek(WeekOrder.MONDAY) }, label = { Text("Понедельник") })
+                FilterChip(WeekOrder.normalize(settings.firstDayOfWeek) == WeekOrder.SUNDAY, onClick = { vm.setFirstDayOfWeek(WeekOrder.SUNDAY) }, label = { Text("Воскресенье") })
+            }
+            Text("Формат времени", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(TimeFormat.normalize(settings.timeFormat) == TimeFormat.H24, onClick = { vm.setTimeFormat(TimeFormat.H24) }, label = { Text("24 часа") })
+                FilterChip(TimeFormat.normalize(settings.timeFormat) == TimeFormat.H12, onClick = { vm.setTimeFormat(TimeFormat.H12) }, label = { Text("12 часов") })
+            }
+            Text("Пример: ${TimeFormat.format(9 * 60 + 30, settings.timeFormat)} · новый день начинается в 00:00 по времени устройства.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
         item { SettingsGroup("Данные на устройстве") {
             Text("Данные хранятся локально и не отправляются на сервер.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

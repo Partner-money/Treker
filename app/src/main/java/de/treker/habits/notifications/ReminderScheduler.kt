@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import de.treker.habits.MainActivity
@@ -74,26 +73,23 @@ class ReminderReceiver : BroadcastReceiver() {
                 val settings = SettingsStore(context).settings.first()
                 if (settings.remindersEnabled && habit.reminderEnabled && !habit.paused && !habit.archived) {
                     val record = AppDatabase.get(context).habitDao().record(habit.id, LocalDate.now().toString())
-                    if (record?.status != Tracking.DONE) notify(context, habit.title, settings.soundEnabled, habit.id)
+                    if (record?.status != Tracking.DONE) notify(context, habit.title, habit, settings)
                 }
                 ReminderScheduler.sync(context, habit, settings.remindersEnabled)
             } finally { pendingResult.finish() }
         }
     }
 
-    private fun notify(context: Context, title: String, sound: Boolean, id: Long) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        val soundChannel = "treker_reminders_sound"
-        val silentChannel = "treker_reminders_silent"
-        if (Build.VERSION.SDK_INT >= 26) {
-            if (manager.getNotificationChannel(soundChannel) == null) manager.createNotificationChannel(android.app.NotificationChannel(soundChannel, "Напоминания со звуком", android.app.NotificationManager.IMPORTANCE_DEFAULT))
-            if (manager.getNotificationChannel(silentChannel) == null) manager.createNotificationChannel(android.app.NotificationChannel(silentChannel, "Беззвучные напоминания", android.app.NotificationManager.IMPORTANCE_DEFAULT).apply { setSound(null, null); enableVibration(false) })
-        }
-        val openApp = PendingIntent.getActivity(context, id.toInt(), Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = NotificationCompat.Builder(context, if (sound) soundChannel else silentChannel)
+    private fun notify(context: Context, title: String, habit: HabitEntity, settings: de.treker.habits.data.UserSettings) {
+        val (choice, uri) = Sounds.effective(habit.soundChoice, habit.soundUri, settings.soundChoice, settings.customSoundUri)
+        val effectiveChoice = if (settings.soundEnabled) choice else Sounds.SILENT
+        val channel = NotificationChannels.reminderChannel(context, effectiveChoice, uri, settings.vibrationEnabled)
+        val openApp = PendingIntent.getActivity(context, habit.id.toInt(), Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(android.R.drawable.ic_popup_reminder).setContentTitle("Время для привычки")
-            .setContentText(title).setContentIntent(openApp).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_DEFAULT).build()
-        runCatching { NotificationManagerCompat.from(context).notify(id.toInt(), notification) }
+            .setContentText(title).setContentIntent(openApp).setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT).build()
+        runCatching { NotificationManagerCompat.from(context).notify(habit.id.toInt(), notification) }
     }
 }
 

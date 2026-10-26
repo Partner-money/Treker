@@ -12,6 +12,7 @@ import de.treker.habits.data.HabitRepository
 import de.treker.habits.domain.Tracking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 object TimerAlarm {
@@ -38,15 +39,18 @@ class TimerReceiver : BroadcastReceiver() {
                 repository.completeElapsedTimers()
                 val record = repository.recordById(id) ?: return@launch
                 if (record.typeSnapshot == Tracking.TIMER && record.status == Tracking.DONE) {
-                    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                    val channel = "treker_timer_finished"
-                    if (android.os.Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(channel) == null) {
-                        manager.createNotificationChannel(android.app.NotificationChannel(channel, "Завершение таймера", android.app.NotificationManager.IMPORTANCE_DEFAULT))
-                    }
+                    val settings = de.treker.habits.data.SettingsStore(context).settings.first()
+                    val choice = if (settings.soundEnabled) settings.soundChoice else Sounds.SILENT
+                    val channel = NotificationChannels.timerChannel(context, choice, settings.customSoundUri, settings.vibrationEnabled, settings.timerLongAlert)
+                    val openApp = android.app.PendingIntent.getActivity(
+                        context, (id xor 0x40000000).toInt(), android.content.Intent(context, de.treker.habits.MainActivity::class.java),
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                    )
                     val notification = NotificationCompat.Builder(context, channel)
                         .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                         .setContentTitle("Таймер завершён")
                         .setContentText("${record.titleSnapshot} — цель достигнута")
+                        .setContentIntent(openApp)
                         .setAutoCancel(true)
                         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                         .build()

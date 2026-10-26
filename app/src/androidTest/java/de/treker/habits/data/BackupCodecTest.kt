@@ -12,23 +12,45 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class BackupCodecTest {
-    @Test fun versionTwoRoundTripsHabitsHistoryTemplatesAndSettings() {
-        val today = LocalDate.now().toString()
-        val habits = listOf(HabitEntity(id = 4, title = "Вода", category = "Моя категория", trackingType = Tracking.COUNTER, target = 6.0, unit = "стаканов", createdDate = today))
-        val records = listOf(DailyRecordEntity(id = 9, habitId = 4, date = today, titleSnapshot = "Вода", categorySnapshot = "Моя категория", typeSnapshot = Tracking.COUNTER, targetSnapshot = 6.0, unitSnapshot = "стаканов", progress = 3.0))
-        val templates = listOf(UserTemplateEntity(id = 2, title = "Вода", description = "Пей регулярно", category = "Здоровье", icon = "health", color = 0xFF00897B, trackingType = Tracking.COUNTER, target = 6.0, unit = "стаканов", scheduleMask = 127))
-        val settings = UserSettings(theme = "DARK", remindersEnabled = false, soundEnabled = false, accentColor = 0xFF00897B)
+    private val today = LocalDate.now().toString()
 
-        val parsed = BackupCodec.parse(BackupCodec.export(habits, records, templates, settings))
+    private fun habit() = HabitEntity(
+        id = 4, title = "Вода", category = "Моя категория", trackingType = Tracking.COUNTER,
+        target = 6.0, unit = "стаканов", createdDate = today,
+        reminderMinute = 9 * 60, reminderEnabled = true,
+        soundChoice = "DOUBLE", soundUri = "content://media/external/audio/media/42"
+    )
 
-        assertEquals(habits, parsed.habits)
-        assertEquals(records, parsed.records)
-        assertEquals(templates, parsed.templates)
-        assertEquals(settings, parsed.settings)
+    private fun records() = listOf(
+        DailyRecordEntity(
+            id = 9, habitId = 4, date = today, titleSnapshot = "Вода", categorySnapshot = "Моя категория",
+            typeSnapshot = Tracking.COUNTER, targetSnapshot = 6.0, unitSnapshot = "стаканов", progress = 3.0
+        )
+    )
+
+    private fun templates() = listOf(
+        UserTemplateEntity(
+            id = 2, title = "Вода", description = "Пей регулярно", category = "Здоровье", icon = "health",
+            color = 0xFF00897B, trackingType = Tracking.COUNTER, target = 6.0, unit = "стаканов", scheduleMask = 127
+        )
+    )
+
+    private fun settings() = UserSettings(
+        theme = "DARK", remindersEnabled = false, soundEnabled = false, accentColor = 0xFF00897B,
+        soundChoice = "CUSTOM", customSoundUri = "content://media/external/audio/media/7",
+        vibrationEnabled = false, timerLongAlert = true, firstDayOfWeek = "SUNDAY", timeFormat = "12H"
+    )
+
+    @Test fun versionThreeRoundTripsHabitsSoundsAndBehaviorSettings() {
+        val parsed = BackupCodec.parse(BackupCodec.export(listOf(habit()), records(), templates(), settings()))
+
+        assertEquals(habit(), parsed.habits.single())
+        assertEquals(records(), parsed.records)
+        assertEquals(templates(), parsed.templates)
+        assertEquals(settings(), parsed.settings)
     }
 
     @Test fun versionOneBackupRemainsImportable() {
-        val today = LocalDate.now().toString()
         val habit = HabitEntity(id = 1, title = "Читать", createdDate = today)
         val json = JSONObject(BackupCodec.export(listOf(habit), emptyList(), emptyList(), UserSettings()))
             .put("formatVersion", 1)
@@ -39,6 +61,36 @@ class BackupCodecTest {
         assertTrue(parsed.records.isEmpty())
         assertTrue(parsed.templates.isEmpty())
         assertNull(parsed.settings)
+    }
+
+    @Test fun versionTwoBackupKeepsDefaultsForNewPreferences() {
+        val habit = HabitEntity(id = 1, title = "Читать", createdDate = today)
+        val json = JSONObject(BackupCodec.export(listOf(habit), emptyList(), emptyList(), UserSettings()))
+            .put("formatVersion", 2)
+            .put("settings", JSONObject().put("theme", "LIGHT").put("remindersEnabled", true).put("soundEnabled", true))
+            .also { root -> root.getJSONArray("habits").getJSONObject(0).remove("soundChoice") }
+
+        val parsed = BackupCodec.parse(json.toString())
+        val importedSettings = parsed.settings
+        assertEquals("LIGHT", importedSettings?.theme)
+        assertEquals("SYSTEM", importedSettings?.soundChoice)
+        assertNull(importedSettings?.customSoundUri)
+        assertEquals("MONDAY", importedSettings?.firstDayOfWeek)
+        assertEquals("24H", importedSettings?.timeFormat)
+        assertNull(parsed.habits.single().soundChoice)
+    }
+
+    @Test fun unsafeCustomSoundUriIsDropped() {
+        val json = JSONObject(BackupCodec.export(listOf(habit()), emptyList(), emptyList(), settings()))
+            .put("settings", JSONObject().put("soundChoice", "CUSTOM").put("customSoundUri", "file:///etc/passwd"))
+            .also { root ->
+                val habitJson = root.getJSONArray("habits").getJSONObject(0)
+                habitJson.put("soundUri", "javascript:alert(1)")
+            }
+
+        val parsed = BackupCodec.parse(json.toString())
+        assertNull(parsed.settings?.customSoundUri)
+        assertNull(parsed.habits.single().soundUri)
     }
 
     @Test fun unsupportedVersionIsRejectedBeforeAnyDatabaseMutation() {

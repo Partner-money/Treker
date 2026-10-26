@@ -7,13 +7,25 @@ data class BackupData(
     val habits: List<HabitEntity>,
     val records: List<DailyRecordEntity>,
     val templates: List<UserTemplateEntity>,
-    val settings: UserSettings?
+    val settings: UserSettings?,
+    /** Keys actually present in the file, so older backups do not overwrite newer local preferences. */
+    val settingsKeys: Set<String> = emptySet()
 )
 
 object BackupCodec {
     fun export(habits: List<HabitEntity>, records: List<DailyRecordEntity>, templates: List<UserTemplateEntity>, settings: UserSettings): String {
-        val root = JSONObject().put("formatVersion", 2).put("app", "Treker")
-            .put("settings", JSONObject().put("theme", settings.theme).put("remindersEnabled", settings.remindersEnabled).put("soundEnabled", settings.soundEnabled).put("accentColor", settings.accentColor))
+        val root = JSONObject().put("formatVersion", 3).put("app", "Treker")
+            .put("settings", JSONObject()
+                .put("theme", settings.theme)
+                .put("remindersEnabled", settings.remindersEnabled)
+                .put("soundEnabled", settings.soundEnabled)
+                .put("accentColor", settings.accentColor)
+                .put("soundChoice", settings.soundChoice)
+                .put("customSoundUri", settings.customSoundUri ?: JSONObject.NULL)
+                .put("vibrationEnabled", settings.vibrationEnabled)
+                .put("timerLongAlert", settings.timerLongAlert)
+                .put("firstDayOfWeek", settings.firstDayOfWeek)
+                .put("timeFormat", settings.timeFormat))
         root.put("habits", JSONArray().apply {
             habits.forEach { h -> put(JSONObject()
                 .put("id", h.id).put("title", h.title).put("description", h.description).put("category", h.category)
@@ -21,6 +33,7 @@ object BackupCodec {
                 .put("unit", h.unit).put("scheduleMode", h.scheduleMode).put("scheduleMask", h.scheduleMask)
                 .put("onceDate", h.onceDate ?: JSONObject.NULL).put("reminderMinute", h.reminderMinute ?: JSONObject.NULL)
                 .put("reminderEnabled", h.reminderEnabled).put("createdDate", h.createdDate).put("paused", h.paused)
+                .put("soundChoice", h.soundChoice ?: JSONObject.NULL).put("soundUri", h.soundUri ?: JSONObject.NULL)
                 .put("archived", h.archived).put("archivedDate", h.archivedDate ?: JSONObject.NULL)) }
         })
         root.put("records", JSONArray().apply {
@@ -40,11 +53,11 @@ object BackupCodec {
         return root.toString(2)
     }
 
-    /** Validates the whole backup before data replacement; version 1 backups remain importable. */
+    /** Validates the whole backup before data replacement; version 1 and 2 backups remain importable. */
     fun parse(json: String): BackupData {
         val root = JSONObject(json)
         val version = root.optInt("formatVersion", -1)
-        require(version in 1..2) { "Версия резервной копии не поддерживается" }
+        require(version in 1..3) { "Версия резервной копии не поддерживается" }
         val habitArray = root.getJSONArray("habits")
         val recordArray = root.getJSONArray("records")
         val habits = buildList {
@@ -58,6 +71,8 @@ object BackupCodec {
                     unit = o.optString("unit", "раз"), scheduleMode = o.optString("scheduleMode", "WEEKLY"),
                     scheduleMask = o.optInt("scheduleMask", 127), onceDate = o.nullableString("onceDate"),
                     reminderMinute = o.nullableInt("reminderMinute"), reminderEnabled = o.optBoolean("reminderEnabled"),
+                    soundChoice = o.nullableString("soundChoice")?.takeIf { it in SOUND_CHOICES },
+                    soundUri = o.nullableString("soundUri")?.takeIf { it.startsWith("content://") },
                     createdDate = o.getString("createdDate"), paused = o.optBoolean("paused"), archived = o.optBoolean("archived"),
                     archivedDate = o.nullableString("archivedDate")
                 ))
@@ -97,6 +112,7 @@ object BackupCodec {
         require(records.map { it.habitId to it.date }.distinct().size == records.size) { "В резервной копии есть повторяющиеся дневные записи" }
         require(records.map { it.id }.distinct().size == records.size) { "В резервной копии есть повторяющиеся ID записей" }
         require(templates.map { it.id }.distinct().size == templates.size) { "В резервной копии есть повторяющиеся шаблоны" }
+        require(habits.all { it.soundUri == null || it.soundUri.startsWith("content://") }) { "В резервной копии есть некорректный звук привычки" }
         require(habits.all { it.id > 0 && runCatching { java.time.LocalDate.parse(it.createdDate) }.isSuccess && it.trackingType in TRACKING_TYPES && it.scheduleMode in setOf("WEEKLY", "ONCE") && (it.scheduleMode != "WEEKLY" || it.scheduleMask in 1..127) && (it.scheduleMode != "ONCE" || runCatching { java.time.LocalDate.parse(it.onceDate) }.isSuccess) && (it.reminderMinute == null || it.reminderMinute in 0..1439) }) { "В резервной копии есть некорректная привычка" }
         require(records.all { it.id > 0 && runCatching { java.time.LocalDate.parse(it.date) }.isSuccess && it.status in setOf("PENDING", "DONE", "SKIPPED", "FAILED") && it.typeSnapshot in TRACKING_TYPES }) { "В резервной копии есть некорректная дневная запись" }
         require(templates.all { it.id > 0 && it.trackingType in TRACKING_TYPES && it.scheduleMask in 1..127 }) { "В резервной копии есть некорректный пользовательский шаблон" }
@@ -105,12 +121,28 @@ object BackupCodec {
             val theme = prefs.optString("theme", "SYSTEM").takeIf { it in setOf("SYSTEM", "LIGHT", "DARK") } ?: "SYSTEM"
             val allowedAccents = setOf(0xFF5556B8L, 0xFF00897BL, 0xFFE16C5BL, 0xFF8E63BAL, 0xFFE5A33DL, 0xFF3979B9L)
             val accent = prefs.optLong("accentColor", 0xFF5556B8L).takeIf { it in allowedAccents } ?: 0xFF5556B8
-            UserSettings(theme, prefs.optBoolean("remindersEnabled", true), prefs.optBoolean("soundEnabled", true), accent)
+            val soundChoice = prefs.optString("soundChoice", "SYSTEM").takeIf { it in SOUND_CHOICES } ?: "SYSTEM"
+            val customSound = prefs.nullableString("customSoundUri")?.takeIf { it.startsWith("content://") }
+            val firstDay = prefs.optString("firstDayOfWeek", "MONDAY").takeIf { it in setOf("MONDAY", "SUNDAY") } ?: "MONDAY"
+            val timeFormat = prefs.optString("timeFormat", "24H").takeIf { it in setOf("24H", "12H") } ?: "24H"
+            UserSettings(
+                theme = theme,
+                remindersEnabled = prefs.optBoolean("remindersEnabled", true),
+                soundEnabled = prefs.optBoolean("soundEnabled", true),
+                accentColor = accent,
+                soundChoice = soundChoice,
+                customSoundUri = customSound,
+                vibrationEnabled = prefs.optBoolean("vibrationEnabled", true),
+                timerLongAlert = prefs.optBoolean("timerLongAlert", false),
+                firstDayOfWeek = firstDay,
+                timeFormat = timeFormat
+            )
         }
-        return BackupData(habits, records, templates, settings)
+        return BackupData(habits, records, templates, settings, settingsObject?.keys()?.asSequence()?.toSet() ?: emptySet())
     }
 
     private val TRACKING_TYPES = setOf("SIMPLE", "COUNTER", "TIMER", "ACCUMULATE")
+    private val SOUND_CHOICES = setOf("SILENT", "SYSTEM", "BEEP", "DOUBLE", "ALARM", "CUSTOM")
     private fun JSONObject.nullableString(key: String): String? = if (isNull(key) || !has(key)) null else getString(key)
     private fun JSONObject.nullableInt(key: String): Int? = if (isNull(key) || !has(key)) null else getInt(key)
     private fun JSONObject.nullableLong(key: String): Long? = if (isNull(key) || !has(key)) null else getLong(key)

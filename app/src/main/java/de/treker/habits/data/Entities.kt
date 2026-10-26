@@ -21,6 +21,9 @@ data class HabitEntity(
     val onceDate: String? = null,
     val reminderMinute: Int? = null,
     val reminderEnabled: Boolean = false,
+    /** Per-habit sound override; null means "use the global setting". */
+    val soundChoice: String? = null,
+    val soundUri: String? = null,
     val createdDate: String,
     val paused: Boolean = false,
     val archived: Boolean = false,

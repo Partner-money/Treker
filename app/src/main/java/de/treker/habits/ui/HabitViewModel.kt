@@ -11,6 +11,7 @@ import de.treker.habits.data.HabitRepository
 import de.treker.habits.data.SettingsStore
 import de.treker.habits.data.UserSettings
 import de.treker.habits.notifications.ReminderScheduler
+import de.treker.habits.notifications.SoundPlayer
 import de.treker.habits.notifications.TimerAlarm
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +72,22 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun setReminders(value: Boolean) = viewModelScope.launch { settingsStore.setReminders(value); ReminderScheduler.syncAll(getApplication(), value) }
     fun setSound(value: Boolean) = viewModelScope.launch { settingsStore.setSound(value) }
     fun setAccentColor(value: Long) = viewModelScope.launch { settingsStore.setAccent(value) }
+    fun setSoundChoice(value: String) = viewModelScope.launch { settingsStore.setSoundChoice(value) }
+    fun setVibration(value: Boolean) = viewModelScope.launch { settingsStore.setVibration(value) }
+    fun setTimerLongAlert(value: Boolean) = viewModelScope.launch { settingsStore.setTimerLongAlert(value) }
+    fun setFirstDayOfWeek(value: String) = viewModelScope.launch { settingsStore.setFirstDayOfWeek(value) }
+    fun setTimeFormat(value: String) = viewModelScope.launch { settingsStore.setTimeFormat(value) }
+
+    /** Stores a user-picked audio file; the URI is kept readable through a persisted permission. */
+    fun setCustomSound(uri: String?) = viewModelScope.launch {
+        settingsStore.setCustomSound(uri)
+        if (uri != null) settingsStore.setSoundChoice("CUSTOM")
+    }
+
+    fun previewSound(choice: String, customUri: String?, vibrate: Boolean) =
+        SoundPlayer.preview(getApplication(), choice, customUri, vibrate)
+
+    fun stopSoundPreview() = SoundPlayer.stop()
 
     suspend fun exportJson(): String {
         val habits = repository.allHabitsOnce()
@@ -85,9 +102,30 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         repository.allRecordsOnce().forEach { TimerAlarm.cancel(getApplication(), it.id) }
         repository.importData(data.habits, data.records, data.templates, replace = true)
         data.settings?.let { imported ->
-            settingsStore.setTheme(imported.theme)
-            settingsStore.setReminders(imported.remindersEnabled)
-            settingsStore.setSound(imported.soundEnabled)
+            // A backup coming from another device may reference an unreadable URI; fall back to the system sound.
+            val readableUri = imported.customSoundUri?.takeIf { uri ->
+                runCatching { getApplication<Application>().contentResolver.openInputStream(android.net.Uri.parse(uri))?.close(); true }.getOrDefault(false)
+            }
+            val sanitized = if (readableUri == null && imported.customSoundUri != null) {
+                imported.copy(customSoundUri = null, soundChoice = if (imported.soundChoice == "CUSTOM") "SYSTEM" else imported.soundChoice)
+            } else imported
+            // Older backups lack the newer keys: keep the current local choice instead of resetting it.
+            val current = settingsStore.settings.first()
+            val keys = data.settingsKeys
+            settingsStore.applyImported(
+                current.copy(
+                    theme = if ("theme" in keys) sanitized.theme else current.theme,
+                    remindersEnabled = if ("remindersEnabled" in keys) sanitized.remindersEnabled else current.remindersEnabled,
+                    soundEnabled = if ("soundEnabled" in keys) sanitized.soundEnabled else current.soundEnabled,
+                    accentColor = if ("accentColor" in keys) sanitized.accentColor else current.accentColor,
+                    soundChoice = if ("soundChoice" in keys) sanitized.soundChoice else current.soundChoice,
+                    customSoundUri = if ("customSoundUri" in keys) readableUri else current.customSoundUri,
+                    vibrationEnabled = if ("vibrationEnabled" in keys) sanitized.vibrationEnabled else current.vibrationEnabled,
+                    timerLongAlert = if ("timerLongAlert" in keys) sanitized.timerLongAlert else current.timerLongAlert,
+                    firstDayOfWeek = if ("firstDayOfWeek" in keys) sanitized.firstDayOfWeek else current.firstDayOfWeek,
+                    timeFormat = if ("timeFormat" in keys) sanitized.timeFormat else current.timeFormat
+                )
+            )
         }
         val enabled = settingsStore.settings.first().remindersEnabled
         ReminderScheduler.syncAll(getApplication(), enabled)
