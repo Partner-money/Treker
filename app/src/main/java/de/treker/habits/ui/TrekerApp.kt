@@ -213,7 +213,7 @@ private fun HabitCard(habit: HabitEntity, record: DailyRecordEntity, vm: HabitVi
             when (record.typeSnapshot) {
                 Tracking.SIMPLE -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (record.status == Tracking.DONE) "Готово на сегодня" else "Отметь выполнение", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    FilledTonalButton(onClick = { vm.progress(record, 1.0) }, enabled = !habit.paused) { Icon(if (record.status == Tracking.DONE) Icons.Outlined.Undo else Icons.Outlined.Check, null); Spacer(Modifier.width(6.dp)); Text(if (record.status == Tracking.DONE) "Отменить" else "Сделано") }
+                    FilledTonalButton(onClick = { vm.progress(record, 1.0) }, enabled = !habit.paused) { Icon(if (record.status == Tracking.DONE) Icons.AutoMirrored.Outlined.Undo else Icons.Outlined.Check, null); Spacer(Modifier.width(6.dp)); Text(if (record.status == Tracking.DONE) "Отменить" else "Сделано") }
                 }
                 Tracking.COUNTER -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {

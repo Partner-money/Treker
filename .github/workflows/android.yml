@@ -49,7 +49,7 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-boot-timeout: 1200
           script: |
             set -o pipefail
             ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log
@@ -60,7 +60,7 @@ jobs:
           import os, re, xml.etree.ElementTree as ET
           from pathlib import Path
           paths = [Path("gradle-unit.log"), Path("gradle-android.log"), Path("gradle-assemble.log")]
-          markers = re.compile(r"(^e: | error:|FAILED|FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find|Unresolved reference|AssertionError|BUILD FAILED|Tests on |There were failing tests|INSTALL_FAILED|Error:|Exception|emulator)", re.IGNORECASE)
+          markers = re.compile(r"(^e: | error:|FAILED|FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find|Unresolved reference|AssertionError|BUILD FAILED|Tests on |There were failing tests|INSTALL_FAILED|Timeout waiting|Tests on )", re.IGNORECASE)
           messages = []
           for path in paths:
               if path.exists():
