@@ -30,6 +30,17 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee gradle-unit.log
+      - name: Assemble installable debug APK
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug 2>&1 | tee gradle-assemble.log
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: treker-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
       - name: Run Android integration tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -41,10 +52,6 @@ jobs:
           script: |
             set -o pipefail
             ./gradlew --no-daemon connectedDebugAndroidTest 2>&1 | tee gradle-android.log
-      - name: Assemble installable debug APK
-        run: |
-          set -o pipefail
-          ./gradlew --no-daemon assembleDebug 2>&1 | tee gradle-assemble.log
       - name: Report Gradle diagnostics
         if: failure()
         run: |
@@ -52,13 +59,13 @@ jobs:
           import os, re, xml.etree.ElementTree as ET
           from pathlib import Path
           paths = [Path("gradle-unit.log"), Path("gradle-android.log"), Path("gradle-assemble.log")]
-          markers = re.compile(r"(^e: | error:|FAILED|FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find|Unresolved reference|AssertionError|BUILD FAILED)")
+          markers = re.compile(r"(^e: | error:|FAILED|FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find|Unresolved reference|AssertionError|BUILD FAILED|Tests on |There were failing tests|INSTALL_FAILED|Error:|Exception|emulator)", re.IGNORECASE)
           messages = []
           for path in paths:
               if path.exists():
                   lines = path.read_text(errors="replace").splitlines()
                   messages.extend(line.strip() for line in lines if markers.search(line))
-          for report in Path("app/build/test-results").rglob("*.xml"):
+          for report in list(Path("app/build/test-results").rglob("*.xml")) + list(Path("app/build/outputs/androidTest-results").rglob("*.xml")):
               try:
                   root = ET.parse(report).getroot()
                   for case in root.iter("testcase"):
@@ -87,12 +94,6 @@ jobs:
           path: |
             gradle-*.log
             app/build/test-results/**/*.xml
+            app/build/outputs/androidTest-results/**/*.xml
           if-no-files-found: ignore
           retention-days: 7
-      - name: Upload installable debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: treker-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30

@@ -15,6 +15,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -558,7 +560,7 @@ private fun sectionIcon(section: Section) = when (section) {
 }
 private fun iconFor(name: String) = when (name.lowercase()) {
     "спорт", "fitness", "exercise" -> Icons.Outlined.FitnessCenter
-    "обучение", "book", "reading" -> Icons.Outlined.MenuBook
+    "обучение", "book", "reading" -> Icons.AutoMirrored.Outlined.MenuBook
     "здоровье", "water", "health" -> Icons.Outlined.FavoriteBorder
     "отдых", "meditation" -> Icons.Outlined.SelfImprovement
     "продуктивность", "work" -> Icons.Outlined.Bolt
