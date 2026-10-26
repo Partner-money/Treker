@@ -31,7 +31,7 @@ APK появится в `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### GitHub Actions
 
-Workflow `.github/workflows/android.yml` на push/pull request и вручную запускает unit-тесты, Android-инструментальные тесты на эмуляторе API 35, затем собирает debug APK. После успешного запуска файл доступен в Actions → Artifacts (`treker-debug-apk`). Для локальной сборки нужны JDK 17 и Android SDK 35; `gradlew` скачает Gradle 8.9.
+Workflow `.github/workflows/android.yml` на push/pull request и вручную запускает unit-тесты, собирает debug APK, затем прогоняет Android-инструментальные тесты на эмуляторе API 34. Последний проверенный запуск: [Actions run 40347718986](https://github.com/Partner-money/Treker/actions/runs/40347718986) — успешно. APK доступен в Actions → Artifacts (`treker-debug-apk`). Для локальной сборки нужны JDK 17 и Android SDK 35; `gradlew` скачает Gradle 8.9.
 
 ## Установка на Samsung / Android
 
@@ -63,4 +63,4 @@ APK CI — **debug-сборка**, подписанная автоматичес
 
 ## Проверки
 
-Unit-тесты в `app/src/test` покрывают расписания, границы счётчика, уровни тепловой карты и серии. Android-инструментальные тесты в `app/src/androidTest` проверяют идемпотентность дневных записей, счётчик, таймер после паузы/возобновления, резервную копию v1/v2 и запуск главного экрана. Эти тесты добавлены, но в текущем контейнере не запущены: отсутствуют JDK и Android SDK. Workflow настроен запускать их на эмуляторе API 35.
+Unit-тесты в `app/src/test` покрывают расписания, границы счётчика, уровни тепловой карты и серии. Android-инструментальные тесты в `app/src/androidTest` проверяют идемпотентность дневных записей, счётчик, таймер после паузы/возобновления, резервную копию v1/v2 и запуск главного экрана. Все они проходят в CI на эмуляторе API 34; локально в контейнере JDK и Android SDK отсутствуют, поэтому проверка выполняется только через GitHub Actions.
