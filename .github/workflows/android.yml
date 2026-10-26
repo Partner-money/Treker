@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-ci-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -44,14 +48,14 @@ jobs:
       - name: Run Android integration tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          api-level: 30
+          target: aosp_atd
           arch: x86_64
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 1200
           script: |
-            bash -c './gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log; status=${PIPESTATUS[0]}; adb logcat -d > logcat.txt 2>&1 || true; adb shell pm list packages > installed-packages.txt 2>&1 || true; exit $status'
+            bash -c './gradlew --stop >/dev/null 2>&1 || true; ./gradlew --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx1280m -XX:MaxMetaspaceSize=384m" connectedDebugAndroidTest 2>&1 | tee gradle-android.log; status=${PIPESTATUS[0]}; adb logcat -d > logcat.txt 2>&1 || true; adb shell pm list packages > installed-packages.txt 2>&1 || true; exit $status'
       - name: Report Gradle diagnostics
         if: always()
         run: |
