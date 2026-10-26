@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.treker.habits.data.AppDatabase
+import de.treker.habits.data.BackupCodec
 import de.treker.habits.data.DailyRecordEntity
 import de.treker.habits.data.HabitEntity
 import de.treker.habits.data.HabitRepository
