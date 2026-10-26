@@ -27,7 +27,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee gradle-unit.log
       - name: Run Android integration tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -36,9 +38,45 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: ./gradlew --no-daemon connectedDebugAndroidTest
+          script: |
+            set -o pipefail
+            ./gradlew --no-daemon connectedDebugAndroidTest 2>&1 | tee gradle-android.log
       - name: Assemble installable debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug 2>&1 | tee gradle-assemble.log
+      - name: Report Gradle diagnostics
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          paths = [Path("gradle-unit.log"), Path("gradle-android.log"), Path("gradle-assemble.log")]
+          markers = re.compile(r"(^e: | error:|FAILURE: Build failed|What went wrong:|Execution failed for task|Could not resolve|Could not find|Unresolved reference|BUILD FAILED)")
+          messages = []
+          for path in paths:
+              if path.exists():
+                  lines = path.read_text(errors="replace").splitlines()
+                  messages.extend(line.strip() for line in lines if markers.search(line))
+          if not messages:
+              for path in paths:
+                  if path.exists(): messages.extend(path.read_text(errors="replace").splitlines()[-20:])
+          messages = list(dict.fromkeys(messages))[-30:]
+          summary = ["## Gradle diagnostics", ""] + [f"- `{message}`" for message in messages]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write(chr(10).join(summary) + chr(10))
+          for message in messages:
+              safe = message.replace("%", "%25").replace(chr(13), "%0D").replace(chr(10), "%0A")
+              print(f"::error::{safe[:4000]}")
+          PY
+      - name: Upload Gradle diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-diagnostics
+          path: gradle-*.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
