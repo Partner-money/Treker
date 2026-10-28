@@ -71,7 +71,9 @@ class RoomSchemaCompatibilityTest {
         rawHelper.close()
     }
 
-    @After fun deleteDatabase() = context.deleteDatabase(name)
+    @After fun deleteDatabase() {
+        context.deleteDatabase(name)
+    }
 
     @Test fun migratedDatabaseIsUsableThroughGeneratedDao() = runBlocking {
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
