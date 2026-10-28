@@ -7,9 +7,24 @@ LOG="gradle-android.log"
 
 log() { echo "[connected-tests] $*"; }
 
+# android-emulator-runner returns once the emulator process is up, but adb can still report the device
+# as not booted yet ("No compatible devices connected"). Wait for boot_completed explicitly.
+wait_for_boot() {
+  adb wait-for-device
+  for _ in $(seq 1 120); do
+    if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+      log "device booted"
+      return 0
+    fi
+    sleep 5
+  done
+  log "device did not report boot_completed in time"
+  return 1
+}
+
 # Package verifiers and leftover installs are the usual reasons for "Failed to install split APK(s)"
 # on the lightweight aosp_atd images.
-adb wait-for-device
+wait_for_boot || true
 adb shell settings put global verifier_verify_adb_installs 0 || true
 adb shell settings put global package_verifier_enable 0 || true
 adb uninstall de.treker.habits >/dev/null 2>&1 || true
@@ -28,8 +43,11 @@ for attempt in 1 2; do
   if [ "$status" -eq 0 ]; then
     break
   fi
-  if grep -q "Failed to install split APK" "$LOG"; then
-    log "install failed, cleaning device state before retry"
+  if grep -qE "Failed to install split APK|No compatible devices connected|Failed to install.*APK" "$LOG"; then
+    log "device or install hiccup, refreshing adb and cleaning device state before retry"
+    adb kill-server || true
+    sleep 5
+    wait_for_boot || true
     adb uninstall de.treker.habits >/dev/null 2>&1 || true
     adb uninstall de.treker.habits.test >/dev/null 2>&1 || true
     adb shell pm trim-caches 4G >/dev/null 2>&1 || true
