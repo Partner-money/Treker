@@ -33,6 +33,22 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew --no-daemon assembleDebug 2>&1 | tee gradle-assemble.log
+      - name: Verify exported Room schema
+        run: |
+          schema="app/schemas/de.treker.habits.data.AppDatabase/3.json"
+          if [ ! -f "$schema" ]; then
+            echo "::error::Room schema was not exported to $schema"
+            ls -R app/schemas 2>/dev/null || true
+            exit 1
+          fi
+          python3 -c "import json,sys; data=json.load(open('$schema')); assert data['database']['version']==3; print('schema v3 ok, identityHash', data['database']['identityHash'])"
+      - name: Upload exported Room schema
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schema
+          path: app/schemas
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:

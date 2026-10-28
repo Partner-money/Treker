@@ -83,7 +83,7 @@ interface HabitDao {
     suspend fun deleteUserTemplate(id: Long)
 }
 
-@Database(entities = [HabitEntity::class, DailyRecordEntity::class, UserTemplateEntity::class], version = 3, exportSchema = false)
+@Database(entities = [HabitEntity::class, DailyRecordEntity::class, UserTemplateEntity::class], version = 3, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun habitDao(): HabitDao
 

@@ -28,6 +28,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+
+    sourceSets {
+        // Exported Room schemas are read by MigrationTestHelper from the instrumentation assets.
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+}
+
+ksp {
+    // Room writes app/schemas/<database>/<version>.json during the build; CI uploads them so the
+    // generated files can be committed and MigrationTestHelper can recreate old database versions.
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
