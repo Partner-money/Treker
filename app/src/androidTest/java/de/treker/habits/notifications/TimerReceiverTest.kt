@@ -44,7 +44,7 @@ class TimerReceiverTest {
         }
     }
 
-    @Before fun clearState() = runBlocking {
+    @Before fun clearState() = runBlocking<Unit> {
         manager.cancelAll()
         database.habitDao().clearRecords()
         database.habitDao().clearHabits()
@@ -52,7 +52,7 @@ class TimerReceiverTest {
         settingsStore.setTimerLongAlert(false)
     }
 
-    @After fun cleanUp() = runBlocking {
+    @After fun cleanUp() = runBlocking<Unit> {
         manager.cancelAll()
         database.habitDao().clearRecords()
         database.habitDao().clearHabits()

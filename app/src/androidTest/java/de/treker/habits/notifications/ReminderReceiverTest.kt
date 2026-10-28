@@ -46,7 +46,7 @@ class ReminderReceiverTest {
         }
     }
 
-    @Before fun clearState() = runBlocking {
+    @Before fun clearState() = runBlocking<Unit> {
         manager.cancelAll()
         database.habitDao().clearRecords()
         database.habitDao().clearHabits()
@@ -55,7 +55,7 @@ class ReminderReceiverTest {
         settingsStore.setDayStartHour(0)
     }
 
-    @After fun cleanUp() = runBlocking {
+    @After fun cleanUp() = runBlocking<Unit> {
         manager.cancelAll()
         database.habitDao().clearRecords()
         database.habitDao().clearHabits()
