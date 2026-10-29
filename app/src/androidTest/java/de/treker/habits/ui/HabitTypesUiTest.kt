@@ -1,6 +1,7 @@
 package de.treker.habits.ui
 
-import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -139,7 +140,7 @@ class HabitTypesUiTest {
         clickTab("Сегодня")
         // Wait for the section to compose before looking for its scrollable list.
         waitForText("ДНЕВНОЙ ПЛАН")
-        composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("ДНЕВНОЙ ПЛАН")))
+        composeRule.onNode(hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
             .performScrollToNode(hasText("3 / 3 стаканов"))
         waitForText("3 / 3 стаканов")
     }

@@ -1,6 +1,7 @@
 package de.treker.habits.ui
 
-import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -75,12 +76,27 @@ class SettingsUiTest {
         composeRule.onAllNodes(matcher)[0].performClick()
     }
 
-    /** Scrolls the settings list until [text] is composed and visible, then clicks it. */
+    /** The settings list itself: a vertical scrollable, unlike the horizontally scrolling chip rows. */
+    private val verticalList = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+
+    /**
+     * Scrolls the settings list until [text] is composed and visible, then clicks it.
+     * The list node is recreated on every recomposition, so the scroll is retried a few times.
+     */
     private fun scrollAndClick(text: String) {
-        composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("ПЕРСОНАЛИЗАЦИЯ")))
-            .performScrollToNode(hasText(text))
-        waitForText(text)
-        composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
+        var lastError: Throwable? = null
+        repeat(6) { attempt ->
+            try {
+                composeRule.onNode(verticalList).performScrollToNode(hasText(text))
+                composeRule.waitUntil(5_000) { exists(text) }
+                composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
+                return
+            } catch (error: Throwable) {
+                lastError = error
+                Thread.sleep(300L * (attempt + 1))
+            }
+        }
+        throw AssertionError("Не удалось прокрутить настройки к «$text»: ${lastError?.message}", lastError)
     }
 
     @Test fun themeChoiceIsPersisted() = runBlocking<Unit> {
