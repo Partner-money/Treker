@@ -77,13 +77,17 @@ abstract class HabitUiTestSupport {
     protected fun exists(text: String): Boolean =
         composeRule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
+    /** Some rows are one composed string ("12 окт 2026 · Выполнено · Выполнено"), so match a fragment. */
+    protected fun existsSubstring(text: String): Boolean =
+        composeRule.onAllNodes(hasText(text, substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
     /** Fails with the rendered semantics tree, so a missing label explains itself in CI. */
     protected fun waitUntilTrue(what: String, timeoutMillis: Long = 10_000, condition: () -> Boolean) {
         try {
             composeRule.waitUntil(timeoutMillis, condition)
         } catch (error: Throwable) {
             val tree = runCatching { composeRule.onRoot().printToString() }.getOrDefault("дерево недоступно")
-            throw AssertionError("Не дождались: $what. Дерево экрана:\n" + tree.take(3000), error)
+            throw AssertionError("Не дождались: $what. Дерево экрана:\n" + tree.take(700), error)
         }
     }
 

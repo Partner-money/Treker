@@ -32,7 +32,8 @@ class ProgressUiTest : HabitUiTestSupport() {
         // The habit row opens its journal of the latest days.
         scrollAndClick(title)
         waitForText("История: $title")
-        composeRule.waitUntil(10_000) { exists("Выполнено") }
+        // The journal row is a single line: "<дата> · Выполнено · Выполнено".
+        composeRule.waitUntil(10_000) { existsSubstring("· Выполнено") }
         assertEquals("История не должна создавать новых записей", 1, records().size)
     }
 }
