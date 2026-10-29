@@ -129,6 +129,8 @@ class HabitTypesUiTest {
 
         // "Сегодня" renders the same record from its own list and summarises the counter with the unit.
         click("Сегодня")
+        // Wait for the section to compose before looking for its scrollable list.
+        waitForText("ДНЕВНОЙ ПЛАН")
         composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("ДНЕВНОЙ ПЛАН")))
             .performScrollToNode(hasText("3 / 3 стаканов"))
         waitForText("3 / 3 стаканов")
