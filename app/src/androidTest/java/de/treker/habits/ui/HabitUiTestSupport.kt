@@ -126,9 +126,12 @@ abstract class HabitUiTestSupport {
     protected fun field(index: Int): SemanticsNodeInteraction =
         composeRule.onAllNodes(hasSetTextAction())[index]
 
-    /** Replaces the whole value: the editor prefills the target field with "1.0". */
+    /**
+     * Replaces the whole value: the editor prefills the target field with "1.0".
+     * Scrolling is best effort, because fields inside small dialogs have no scrollable parent.
+     */
     protected fun fillField(index: Int, value: String) {
-        field(index).performScrollTo()
+        runCatching { field(index).performScrollTo() }
         field(index).performTextReplacement(value)
     }
 
