@@ -111,7 +111,8 @@ class HabitTypesUiTest {
         composeRule.waitUntil(10_000) { record().status == Tracking.DONE }
 
         assertEquals("Прогресс равен цели", 3.0, record().progress, 0.0)
-        waitForText("Выполнено")
+        // A completed counter keeps its daily summary and offers an undo action instead of the plus button.
+        waitForText("Отменить выполнение")
     }
 
     @Test fun timerHabitStartsCountsDownAndPauses() = runBlocking<Unit> {
