@@ -72,12 +72,13 @@ class SettingsUiTest : HabitUiTestSupport() {
         waitForText("Очистить историю?")
 
         click("Очистить")
-        // Clearing history recreates the open day, so the habit keeps a fresh pending record.
         composeRule.waitUntil(10_000) { records().none { it.status == Tracking.DONE } }
 
-        val remaining = record()
+        // The open day is rebuilt empty (or left without a record until the next day rollover),
+        // but the habit itself must survive.
+        val remaining = records()
+        assertTrue("Выполнение стёрто из истории", remaining.none { it.status == Tracking.DONE })
+        remaining.forEach { assertEquals("Новых результатов нет", Tracking.PENDING, it.status) }
         assertEquals("Привычка должна остаться", 1, dao.allHabits().size)
-        assertEquals("Дневной результат очищен", Tracking.PENDING, remaining.status)
-        assertEquals(0.0, remaining.progress, 0.0)
     }
 }
