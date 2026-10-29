@@ -99,10 +99,10 @@ jobs:
           if logcat.exists():
               lines = logcat.read_text(errors="replace").splitlines()
               for index, line in enumerate(lines):
-                  crash_marker = ("FATAL EXCEPTION", "lowmemorykiller", "Kill ", "ANR in", "Force finishing")
+                  crash_marker = ("FATAL EXCEPTION", "ANR in", "Force finishing", "am_crash")
                   if any(marker in line for marker in crash_marker):
                       important.append("LOGCAT: " + line.strip())
-                      important.extend(item.strip() for item in lines[index + 1:index + 25])
+                      important.extend(item.strip() for item in lines[index + 1:index + 12])
                       break
 
           log_lines = []
@@ -118,8 +118,8 @@ jobs:
                       line.strip() for line in path.read_text(errors="replace").splitlines() if marker.search(line)
                   )
 
-          important = list(dict.fromkeys(important))[:20]
-          log_lines = list(dict.fromkeys(log_lines))[-15:]
+          important = list(dict.fromkeys(important))[:30]
+          log_lines = list(dict.fromkeys(log_lines))[-12:]
           messages = important + log_lines
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
               output.write("## Test and build diagnostics" + chr(10) + chr(10))
