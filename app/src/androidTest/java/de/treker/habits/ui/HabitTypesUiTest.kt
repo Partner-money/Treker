@@ -74,7 +74,7 @@ class HabitTypesUiTest {
         field(index).performTextReplacement(value)
     }
 
-    private fun createHabit(title: String, typeLabel: String, target: String, unit: String? = null) {
+    private suspend fun createHabit(title: String, typeLabel: String, target: String, unit: String? = null) {
         click("Новая привычка")
         waitForText("Название")
         fillField(0, title)
