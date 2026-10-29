@@ -1,6 +1,7 @@
 package de.treker.habits.ui
 
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -79,6 +80,13 @@ class HabitTypesUiTest {
         composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
     }
 
+    /** Taps a bottom navigation item: the label alone is also drawn as plain text on the screens. */
+    private fun clickTab(label: String) {
+        val matcher = hasText(label) and hasClickAction()
+        composeRule.waitUntil(10_000) { composeRule.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onAllNodes(matcher)[0].performClick()
+    }
+
     private fun field(index: Int): androidx.compose.ui.test.SemanticsNodeInteraction =
         composeRule.onAllNodes(hasSetTextAction())[index]
 
@@ -128,7 +136,7 @@ class HabitTypesUiTest {
         waitForText("Выполнено")
 
         // "Сегодня" renders the same record from its own list and summarises the counter with the unit.
-        click("Сегодня")
+        clickTab("Сегодня")
         // Wait for the section to compose before looking for its scrollable list.
         waitForText("ДНЕВНОЙ ПЛАН")
         composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("ДНЕВНОЙ ПЛАН")))

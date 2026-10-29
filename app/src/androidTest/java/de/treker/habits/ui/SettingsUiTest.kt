@@ -1,6 +1,7 @@
 package de.treker.habits.ui
 
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -67,6 +68,13 @@ class SettingsUiTest {
         composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
     }
 
+    /** Taps a bottom navigation item: the label alone is also drawn as plain text on the screens. */
+    private fun clickTab(label: String) {
+        val matcher = hasText(label) and hasClickAction()
+        composeRule.waitUntil(10_000) { composeRule.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onAllNodes(matcher)[0].performClick()
+    }
+
     /** Scrolls the settings list until [text] is composed and visible, then clicks it. */
     private fun scrollAndClick(text: String) {
         composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("ПЕРСОНАЛИЗАЦИЯ")))
@@ -76,8 +84,8 @@ class SettingsUiTest {
     }
 
     @Test fun themeChoiceIsPersisted() = runBlocking<Unit> {
-        click("Настройки")
-        waitForText("Тема приложения")
+        clickTab("Настройки")
+        waitForText("ПЕРСОНАЛИЗАЦИЯ")
         click("Тёмная")
 
         composeRule.waitUntil(10_000) { currentSettings().theme == "DARK" }
@@ -88,8 +96,8 @@ class SettingsUiTest {
     }
 
     @Test fun timeFormatFirstDayAndDayBoundaryArePersisted() = runBlocking<Unit> {
-        click("Настройки")
-        waitForText("Тема приложения")
+        clickTab("Настройки")
+        waitForText("ПЕРСОНАЛИЗАЦИЯ")
 
         scrollAndClick("12 часов")
         composeRule.waitUntil(10_000) { currentSettings().timeFormat == TimeFormat.H12 }
@@ -108,8 +116,8 @@ class SettingsUiTest {
     }
 
     @Test fun resetRequiresConfirmationAndCanBeCancelled() = runBlocking<Unit> {
-        click("Настройки")
-        waitForText("Тема приложения")
+        clickTab("Настройки")
+        waitForText("ПЕРСОНАЛИЗАЦИЯ")
 
         scrollAndClick("Сбросить приложение")
         waitForText("Удалить все данные?")
