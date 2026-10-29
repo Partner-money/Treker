@@ -89,15 +89,18 @@ jobs:
                   for failure in list(case.findall("failure")) + list(case.findall("error")):
                       header = f"{case.get('classname')} > {case.get('name')}"
                       message = (failure.get("message") or failure.get("type") or "").strip()
-                      important.append(f"{header}: {message}".strip())
+                      important.append(f"{header}: {message or 'no message'}".strip())
                       if failure.text:
                           important.extend(line.strip() for line in failure.text.splitlines()[:15] if line.strip())
+                      else:
+                          important.append(f"{header}: empty report body in {report.name} (test process likely crashed)")
 
           logcat = Path("logcat.txt")
           if logcat.exists():
               lines = logcat.read_text(errors="replace").splitlines()
               for index, line in enumerate(lines):
-                  if "FATAL EXCEPTION" in line or "AndroidRuntime" in line and "FATAL" in line:
+                  crash_marker = ("FATAL EXCEPTION", "lowmemorykiller", "Kill ", "ANR in", "Force finishing")
+                  if any(marker in line for marker in crash_marker):
                       important.append("LOGCAT: " + line.strip())
                       important.extend(item.strip() for item in lines[index + 1:index + 25])
                       break

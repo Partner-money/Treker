@@ -43,8 +43,8 @@ for attempt in 1 2; do
   if [ "$status" -eq 0 ]; then
     break
   fi
-  if grep -qE "Failed to install split APK|No compatible devices connected|Failed to install.*APK" "$LOG"; then
-    log "device or install hiccup, refreshing adb and cleaning device state before retry"
+  if grep -qE "Failed to install split APK|No compatible devices connected|Process crashed|Test run failed to complete|INSTRUMENTATION_FAILED|Finished 0 tests" "$LOG"; then
+    log "device, install or instrumentation hiccup, refreshing adb and cleaning device state before retry"
     adb kill-server || true
     sleep 5
     wait_for_boot || true
@@ -59,5 +59,6 @@ for attempt in 1 2; do
 done
 
 adb logcat -d > logcat.txt 2>&1 || true
+adb shell dumpsys meminfo de.treker.habits > meminfo.txt 2>&1 || true
 adb shell pm list packages > installed-packages.txt 2>&1 || true
 exit "$status"
