@@ -78,14 +78,16 @@ abstract class HabitUiTestSupport {
         composeRule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     /** Fails with the rendered semantics tree, so a missing label explains itself in CI. */
-    protected fun waitForText(text: String) {
+    protected fun waitUntilTrue(what: String, timeoutMillis: Long = 10_000, condition: () -> Boolean) {
         try {
-            composeRule.waitUntil(10_000) { exists(text) }
+            composeRule.waitUntil(timeoutMillis, condition)
         } catch (error: Throwable) {
             val tree = runCatching { composeRule.onRoot().printToString() }.getOrDefault("дерево недоступно")
-            throw AssertionError("Не найден текст «$text». Дерево экрана:\n" + tree.take(3000), error)
+            throw AssertionError("Не дождались: $what. Дерево экрана:\n" + tree.take(3000), error)
         }
     }
+
+    protected fun waitForText(text: String) = waitUntilTrue("текст «$text»") { exists(text) }
 
     protected fun click(text: String) {
         waitForText(text)

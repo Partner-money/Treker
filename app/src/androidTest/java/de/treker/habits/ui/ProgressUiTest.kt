@@ -26,7 +26,7 @@ class ProgressUiTest : HabitUiTestSupport() {
 
         // The regularity list aggregates the day that was just completed.
         scrollListTo("Регулярность привычек")
-        composeRule.waitUntil(10_000) { exists("1 из 1") }
+        waitForText("1 из 1")
         assertTrue("Привычка показана как выполненная за день", exists("1 из 1"))
 
         // The habit row opens its journal of the latest days.
