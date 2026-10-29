@@ -5,7 +5,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import de.treker.habits.MainActivity
@@ -68,9 +68,10 @@ class HabitTypesUiTest {
     private fun field(index: Int): androidx.compose.ui.test.SemanticsNodeInteraction =
         composeRule.onAllNodes(hasSetTextAction())[index]
 
+    /** Replaces the whole value: the editor prefills the target field with "1.0". */
     private fun fillField(index: Int, value: String) {
         field(index).performScrollTo()
-        field(index).performTextInput(value)
+        field(index).performTextReplacement(value)
     }
 
     private fun createHabit(title: String, typeLabel: String, target: String, unit: String? = null) {
@@ -84,6 +85,12 @@ class HabitTypesUiTest {
         if (unit != null) fillField(4, unit)
         click("Сохранить")
         waitForText(title)
+        assertEquals(
+            "Цель должна сохраниться ровно как введено",
+            target.toDouble(),
+            dao.allHabits().single().target,
+            0.0
+        )
     }
 
     @Test fun counterHabitCompletesAtTarget() = runBlocking<Unit> {
