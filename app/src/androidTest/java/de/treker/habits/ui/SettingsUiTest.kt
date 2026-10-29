@@ -1,109 +1,27 @@
 package de.treker.habits.ui
 
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasScrollAction
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import de.treker.habits.MainActivity
-import de.treker.habits.data.SettingsStore
 import de.treker.habits.domain.DayBoundary
 import de.treker.habits.domain.TimeFormat
+import de.treker.habits.domain.Tracking
 import de.treker.habits.domain.WeekOrder
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Checks that choices made on the settings screen survive into DataStore and that the destructive
  * actions stay behind a confirmation dialog.
- *
- * The screen is a LazyColumn, so lower rows are reached through performScrollToNode on the list
- * itself: text that was never composed cannot be scrolled to directly.
  */
 @RunWith(AndroidJUnit4::class)
-class SettingsUiTest {
-    @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
-
-    private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-    private val settingsStore get() = SettingsStore(context)
-
-    private fun currentSettings() = runBlocking { settingsStore.settings.first() }
-
-    @Before fun resetSettings() = runBlocking<Unit> {
-        settingsStore.setTheme("SYSTEM")
-        settingsStore.setTimeFormat(TimeFormat.H24)
-        settingsStore.setFirstDayOfWeek(WeekOrder.MONDAY)
-        settingsStore.setDayStartHour(0)
-    }
-
-    @After fun restoreSettings() = runBlocking<Unit> {
-        settingsStore.setTheme("SYSTEM")
-        settingsStore.setTimeFormat(TimeFormat.H24)
-        settingsStore.setFirstDayOfWeek(WeekOrder.MONDAY)
-        settingsStore.setDayStartHour(0)
-    }
-
-    private fun exists(text: String): Boolean =
-        composeRule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-
-    private fun waitForText(text: String) {
-        composeRule.waitUntil(10_000) { exists(text) }
-    }
-
-    private fun click(text: String) {
-        waitForText(text)
-        composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
-    }
-
-    /** Taps a bottom navigation item: the label alone is also drawn as plain text on the screens. */
-    private fun clickTab(label: String) {
-        val matcher = hasText(label) and hasClickAction()
-        composeRule.waitUntil(10_000) { composeRule.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onAllNodes(matcher)[0].performClick()
-    }
-
-    /** The settings list itself: a vertical scrollable, unlike the horizontally scrolling chip rows. */
-    private val verticalList = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
-
-    /**
-     * Scrolls the settings list until [text] is composed and visible, then clicks it.
-     * The list node is recreated on every recomposition, so the scroll is retried a few times.
-     */
-    private fun scrollAndClick(text: String) {
-        var lastError: Throwable? = null
-        repeat(6) { attempt ->
-            try {
-                composeRule.onNode(verticalList).performScrollToNode(hasText(text))
-                composeRule.waitUntil(5_000) { exists(text) }
-                composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
-                return
-            } catch (error: Throwable) {
-                lastError = error
-                Thread.sleep(300L * (attempt + 1))
-            }
-        }
-        throw AssertionError("Не удалось прокрутить настройки к «$text»: ${lastError?.message}", lastError)
-    }
-
+class SettingsUiTest : HabitUiTestSupport() {
     @Test fun themeChoiceIsPersisted() = runBlocking<Unit> {
         clickTab("Настройки")
         waitForText("ПЕРСОНАЛИЗАЦИЯ")
-        click("Тёмная")
 
+        click("Тёмная")
         composeRule.waitUntil(10_000) { currentSettings().theme == "DARK" }
         assertEquals("DARK", currentSettings().theme)
 
@@ -141,5 +59,25 @@ class SettingsUiTest {
         click("Отмена")
         composeRule.waitUntil(10_000) { !exists("Удалить все данные?") }
         assertTrue("После отмены диалог закрывается", !exists("Удалить всё"))
+    }
+
+    @Test fun clearingHistoryDropsResultsButKeepsHabits() = runBlocking<Unit> {
+        createHabit("Дневник")
+        click("Сделано")
+        composeRule.waitUntil(10_000) { record().status == Tracking.DONE }
+
+        clickTab("Настройки")
+        waitForText("ПЕРСОНАЛИЗАЦИЯ")
+        scrollAndClick("Очистить историю")
+        waitForText("Очистить историю?")
+
+        click("Очистить")
+        // Clearing history recreates the open day, so the habit keeps a fresh pending record.
+        composeRule.waitUntil(10_000) { records().none { it.status == Tracking.DONE } }
+
+        val remaining = record()
+        assertEquals("Привычка должна остаться", 1, dao.allHabits().size)
+        assertEquals("Дневной результат очищен", Tracking.PENDING, remaining.status)
+        assertEquals(0.0, remaining.progress, 0.0)
     }
 }
