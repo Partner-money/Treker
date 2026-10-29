@@ -5,7 +5,6 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
@@ -71,7 +70,7 @@ class SettingsUiTest {
     /** Scrolls the settings list until [text] is composed and visible, then clicks it. */
     private fun scrollAndClick(text: String) {
         composeRule.onNode(hasScrollAction() and hasAnyDescendant(hasText("ПЕРСОНАЛИЗАЦИЯ")))
-            .performScrollToNode(hasText(text, useUnmergedTree = true))
+            .performScrollToNode(hasText(text))
         waitForText(text)
         composeRule.onAllNodesWithText(text, useUnmergedTree = true)[0].performClick()
     }

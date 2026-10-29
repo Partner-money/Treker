@@ -51,6 +51,8 @@ class HabitTypesUiTest {
         settingsStore.setReminders(true)
     }
 
+    private fun record() = runBlocking { dao.allRecords().single() }
+
     private fun exists(text: String): Boolean =
         composeRule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
@@ -87,7 +89,7 @@ class HabitTypesUiTest {
     @Test fun counterHabitCompletesAtTarget() = runBlocking<Unit> {
         createHabit("Вода", "Счётчик количества", target = "3", unit = "стаканов")
         val habit = dao.allHabits().single()
-        assertEquals("Тип должен сохраниться", Tracking.COUNTER, habit.type)
+        assertEquals("Тип должен сохраниться", Tracking.COUNTER, habit.trackingType)
         assertEquals(3.0, habit.target, 0.0)
 
         click("Сегодня")
@@ -95,14 +97,13 @@ class HabitTypesUiTest {
 
         for (step in 1..2) {
             click("+1 стаканов")
-            composeRule.waitUntil(10_000) { dao.allRecords().single().progress == step.toDouble() }
+            composeRule.waitUntil(10_000) { record().progress == step.toDouble() }
         }
         // The third step reaches the target and must close the day on its own.
         click("+1 стаканов")
-        composeRule.waitUntil(10_000) { dao.allRecords().single().status == Tracking.DONE }
+        composeRule.waitUntil(10_000) { record().status == Tracking.DONE }
 
-        val record = dao.allRecords().single()
-        assertEquals("Прогресс равен цели", 3.0, record.progress, 0.0)
+        assertEquals("Прогресс равен цели", 3.0, record().progress, 0.0)
         waitForText("Выполнено")
     }
 
@@ -113,8 +114,8 @@ class HabitTypesUiTest {
         waitForText("Старт")
         click("Старт")
 
-        composeRule.waitUntil(10_000) { dao.allRecords().single().timerRunning }
-        val running = dao.allRecords().single()
+        composeRule.waitUntil(10_000) { record().timerRunning }
+        val running = record()
         assertTrue(
             "У запущенного таймера должен быть дедлайн, примерно через целевую минуту",
             (running.timerDeadlineMillis ?: 0L) > System.currentTimeMillis()
@@ -122,9 +123,9 @@ class HabitTypesUiTest {
         waitForText("Пауза")
 
         click("Пауза")
-        composeRule.waitUntil(10_000) { !dao.allRecords().single().timerRunning }
+        composeRule.waitUntil(10_000) { !record().timerRunning }
 
-        val paused = dao.allRecords().single()
+        val paused = record()
         assertTrue("Остаток должен уменьшаться, но не обнуляться", paused.timerRemainingMillis in 1..60_000)
         assertEquals("Дневная запись не должна закрываться по паузе", Tracking.PENDING, paused.status)
         waitForText("Старт")
